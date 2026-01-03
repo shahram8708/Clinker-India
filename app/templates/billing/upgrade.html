@@ -1,0 +1,342 @@
+{% extends "base.html" %}
+{% block title %}Upgrade | Clinker India{% endblock %}
+{% block content %}
+<section class="upgrade-section">
+  <div class="page-hero shadow-soft premium-hero mb-4 position-relative overflow-hidden">
+    <div class="page-hero__bg hero-grid"></div>
+    <div class="d-flex flex-column flex-lg-row align-items-start gap-3 position-relative">
+      <div class="flex-grow-1">
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <span class="eyebrow text-secondary xsmall">Subscription</span>
+          <span class="chip chip-outline"><i class="bi bi-shield-check me-1"></i>Secure checkout</span>
+        </div>
+        <h1 class="display-6 fw-semibold text-body mb-2">Upgrade your workspace</h1>
+        <p class="text-secondary mb-0">Trial includes {{ subscription.trial_seat_allocation }} seats. Purchase prepaid seats to unlock more members with instant capacity updates.</p>
+      </div>
+      <div class="ms-lg-auto d-flex align-items-center gap-2">
+        <span class="chip chip-info text-uppercase"><i class="bi bi-activity me-1"></i>{{ subscription.status.replace('_',' ')|capitalize }}</span>
+        <span class="pill-soft"><i class="bi bi-building-check me-1"></i>{{ plan.name }}</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4 mb-4">
+    <div class="col-md-4">
+      <div class="stat-tile shadow-soft">
+        <div class="stat-icon gradient-blue"><i class="bi bi-people"></i></div>
+        <div class="stat-label">Total seats</div>
+        <div class="stat-value">{{ subscription.seat_limit }}</div>
+        <div class="stat-sub">Includes {{ subscription.trial_seat_allocation }} trial seats</div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="stat-tile shadow-soft">
+        <div class="stat-icon gradient-emerald"><i class="bi bi-patch-check"></i></div>
+        <div class="stat-label">Remaining</div>
+        <div class="stat-value">{{ subscription.remaining_seats }}</div>
+        <div class="stat-sub">Seats available to allocate now</div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="stat-tile shadow-soft">
+        <div class="stat-icon gradient-amber"><i class="bi bi-graph-up-arrow"></i></div>
+        <div class="stat-label">Activation</div>
+        <div class="stat-value">₹{{ activation_charge }}</div>
+        <div class="stat-sub">{% if charge_base %}One-time enablement • GST extra{% else %}Activation already paid — only seat charges apply{% endif %}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-xl-7">
+      <div class="surface-card shadow-soft h-100 premium-card">
+        <div class="d-flex align-items-start justify-content-between mb-3">
+          <div>
+            <div class="badge bg-gradient text-uppercase small mb-2"><i class="bi bi-lightning-charge me-1"></i>Prepaid seats</div>
+            <h2 class="h5 mb-1">{{ plan.name }}</h2>
+            <p class="text-secondary small mb-0">Enterprise-grade, prepaid seats with instant provisioning and reusability when users are removed.</p>
+          </div>
+          <div class="plan-price text-end">
+            <div class="fs-5 fw-semibold">₹{{ plan.per_seat_amount }} <span class="text-secondary fs-6 fw-normal">/ seat</span></div>
+            <div class="small text-secondary">{% if charge_base %}+ ₹{{ activation_charge }} base activation{% else %}Activation fee already paid{% endif %}</div>
+          </div>
+        </div>
+
+        <div class="progress-wrapper mb-3">
+          {% set remaining_pct = (subscription.remaining_seats / subscription.seat_limit * 100) if subscription.seat_limit else 0 %}
+          <div class="d-flex justify-content-between small text-secondary mb-1">
+            <span>Seat utilization</span>
+            <span>{{ remaining_pct|round(0,'floor') }}% capacity remaining</span>
+          </div>
+          <div class="progress progress-thin">
+            <div class="progress-bar bg-gradient" role="progressbar" style="width: {{ remaining_pct|round(0,'floor') }}%" aria-valuenow="{{ remaining_pct|round(0,'floor') }}" aria-valuemin="0" aria-valuemax="100"></div>
+          </div>
+        </div>
+
+        <div class="feature-grid row g-3 mb-3">
+          <div class="col-sm-6">
+            <div class="feature-check">
+              <div class="check-icon"><i class="bi bi-check2"></i></div>
+              <div>
+                <div class="fw-semibold">Reusable seats</div>
+                <div class="text-secondary small">Recycle seats when members are removed.</div>
+              </div>
+            </div>
+          </div>
+          <div class="col-sm-6">
+            <div class="feature-check">
+              <div class="check-icon"><i class="bi bi-shield-lock"></i></div>
+              <div>
+                <div class="fw-semibold">Razorpay secure</div>
+                <div class="text-secondary small">Payment encrypted and verified.</div>
+              </div>
+            </div>
+          </div>
+          <div class="col-sm-6">
+            <div class="feature-check">
+              <div class="check-icon"><i class="bi bi-currency-rupee"></i></div>
+              <div>
+                <div class="fw-semibold">GST-ready invoices</div>
+                <div class="text-secondary small">Tax applied at checkout automatically.</div>
+              </div>
+            </div>
+          </div>
+          <div class="col-sm-6">
+            <div class="feature-check">
+              <div class="check-icon"><i class="bi bi-clock-history"></i></div>
+              <div>
+                <div class="fw-semibold">Instant capacity</div>
+                <div class="text-secondary small">Seat balance updates immediately after success.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="subtle-list">
+          <div class="subtle-item"><i class="bi bi-check-circle-fill text-success me-2"></i>Prepaid seats never expire</div>
+          <div class="subtle-item"><i class="bi bi-check-circle-fill text-success me-2"></i>Supports invitations and direct user provisioning</div>
+          <div class="subtle-item"><i class="bi bi-check-circle-fill text-success me-2"></i>Works across all teams and projects</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-xl-5">
+      <div class="surface-card shadow-soft gradient-card h-100">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+          <div>
+            <div class="badge bg-light text-dark mb-2"><i class="bi bi-cart-check me-1"></i>Checkout</div>
+            <h3 class="h5 mb-0">Purchase additional seats</h3>
+            <p class="text-secondary small mb-0">Choose how many seats you need—billing is prepaid per member.</p>
+          </div>
+          <div class="pill-soft pill-muted"><i class="bi bi-cash-coin me-1"></i>Razorpay</div>
+        </div>
+
+        <form id="checkout-form" class="needs-validation" novalidate>
+          <div class="mb-3">
+            <label class="form-label fw-semibold d-flex align-items-center gap-2">
+              <i class="bi bi-people-fill text-info"></i>
+              Additional seats needed
+            </label>
+            <input type="number" class="form-control form-control-lg" name="seats" min="1" value="5" required>
+            <div class="form-text text-secondary">You already have {{ subscription.trial_seat_allocation }} trial seats.</div>
+          </div>
+
+          <div class="order-summary mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <span class="text-secondary small">Base activation{% if not charge_base %} (already paid){% endif %}</span>
+              <span class="fw-semibold">₹{{ activation_charge }}</span>
+            </div>
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <span class="text-secondary small">Per seat</span>
+              <span class="fw-semibold">₹{{ plan.per_seat_amount }}</span>
+            </div>
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <span class="text-secondary small">Seat subtotal</span>
+              <span class="fw-semibold" id="estimate-seat-subtotal">₹0</span>
+            </div>
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <span class="text-secondary small">GST ({{ (gst_rate * 100) | round(0, 'floor') }}%)</span>
+              <span class="fw-semibold" id="estimate-tax">₹0</span>
+            </div>
+            <div class="d-flex justify-content-between align-items-center">
+              <span class="fw-semibold">Estimated total</span>
+              <span class="fw-semibold" id="estimate-total">₹0</span>
+            </div>
+            <div class="text-secondary xsmall mt-1">Estimate updates as you change seats (GST applied at checkout).</div>
+          </div>
+
+          <div class="d-flex flex-column gap-2">
+            <button type="submit" class="btn btn-gradient w-100 btn-lg d-flex align-items-center justify-content-center gap-2" data-ripple data-loading-text="Opening checkout">
+              <i class="bi bi-credit-card-2-front"></i>
+              <span class="btn-label">Pay with Razorpay</span>
+            </button>
+            <a class="btn btn-ghost w-100" href="{{ url_for('tenant.user_management') }}">
+              <i class="bi bi-arrow-left"></i> Back to members
+            </a>
+          </div>
+          <p class="small text-secondary mt-3 mb-0 d-flex align-items-start gap-2">
+            <i class="bi bi-info-circle text-info"></i>
+            On success your seat balance updates instantly and future invitations/users are allowed until the new limit is reached.
+          </p>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="surface-card shadow-soft mt-4">
+    <div class="card-body">
+      <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+        <div>
+          <p class="eyebrow text-secondary small mb-1">Payment history</p>
+          <h2 class="h6 mb-0">Recent seat purchases</h2>
+        </div>
+        <span class="badge bg-secondary-subtle text-secondary-emphasis"><i class="bi bi-receipt me-1"></i>Latest 10</span>
+      </div>
+      {% if purchases %}
+        <div class="table-responsive">
+          <table class="table table-premium align-middle mb-0">
+            <thead class="table-dark">
+              <tr>
+                <th>Date</th>
+                <th>Seats</th>
+                <th>Total</th>
+                <th>Status</th>
+                <th>Order ID</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for p in purchases %}
+                <tr>
+                  <td class="small text-secondary">{{ p.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                  <td>{{ p.seats_purchased }}</td>
+                  <td>₹{{ "{:,.2f}".format(p.amount_total) }}</td>
+                  <td>
+                    <span class="badge {% if p.status == 'paid' %}bg-success-subtle text-success-emphasis{% elif p.status == 'pending' %}bg-warning-subtle text-warning-emphasis{% else %}bg-secondary-subtle text-secondary-emphasis{% endif %}">
+                      {{ p.status|replace('_',' ')|capitalize }}
+                    </span>
+                  </td>
+                  <td class="small text-secondary">{{ p.razorpay_order_id or '—' }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="text-secondary small">No payments yet.</div>
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/button_spinner.js') }}"></script>
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+  <script>
+    (function() {
+      const form = document.getElementById('checkout-form');
+      if (!form) return;
+
+      const seatInput = form.querySelector('input[name="seats"]');
+      const estimateTotal = document.getElementById('estimate-total');
+      const estimateSeatSubtotal = document.getElementById('estimate-seat-subtotal');
+      const estimateTax = document.getElementById('estimate-tax');
+
+      // Normalize numeric values coming from the backend (Decimal -> string/number)
+      const perSeat = Number({{ plan.per_seat_amount | tojson }});
+      const baseAmount = Number({{ activation_charge | tojson }});
+      const gstRate = Number({{ gst_rate | tojson }});
+
+      const getCsrfToken = () => {
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? meta.getAttribute('content') : '';
+      };
+
+      const formatCurrency = (val) => `₹${Number(val || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const updateEstimate = () => {
+        const seats = Number.parseInt(seatInput.value, 10) || 0;
+        const seatSubtotal = seats > 0 ? seats * perSeat : 0;
+        const subtotal = baseAmount + seatSubtotal;
+        const tax = subtotal * (gstRate || 0);
+        const total = subtotal + tax;
+        if (estimateSeatSubtotal) estimateSeatSubtotal.textContent = formatCurrency(seatSubtotal);
+        if (estimateTax) estimateTax.textContent = formatCurrency(tax);
+        if (estimateTotal) estimateTotal.textContent = formatCurrency(total);
+      };
+
+      seatInput.addEventListener('input', updateEstimate);
+      updateEstimate();
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const seats = parseInt(form.seats.value, 10);
+        if (!seats || seats < 1) {
+          alert('Enter a valid seat quantity');
+          return;
+        }
+        try {
+          const res = await fetch('{{ url_for('billing.create_order') }}', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': getCsrfToken(),
+            },
+            body: JSON.stringify({ seats })
+          });
+          const data = await res.json();
+          if (!res.ok || data.error) {
+            alert(data.error || 'Unable to start payment.');
+            return;
+          }
+          const options = {
+            key: data.key,
+            order_id: data.orderId,
+            amount: data.amount,
+            currency: data.currency,
+            name: 'Clinker India',
+            description: `${seats} seat pack`,
+            handler: async function (response) {
+              try {
+                const verifyRes = await fetch('{{ url_for('billing.verify_payment') }}', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken(),
+                  },
+                  body: JSON.stringify({
+                    orderId: response.razorpay_order_id,
+                    paymentId: response.razorpay_payment_id,
+                    signature: response.razorpay_signature,
+                  })
+                });
+                const verifyData = await verifyRes.json();
+                if (!verifyRes.ok || !verifyData.ok) {
+                  alert(verifyData.error || 'Payment verification failed.');
+                  return;
+                }
+                alert('Payment successful. Seats updated.');
+                window.location = '{{ url_for('tenant.user_management') }}';
+              } catch (err) {
+                console.error(err);
+                alert('Payment completed, but verification could not be confirmed. Please check seats or refresh.');
+              }
+            },
+            theme: { color: '#0d6efd' }
+          };
+          if (!window.Razorpay) {
+            alert('Razorpay SDK not loaded.');
+            return;
+          }
+          const rzp = new Razorpay(options);
+          rzp.on('payment.failed', function () {
+            alert('Payment failed. Please try again.');
+          });
+          rzp.open();
+        } catch (err) {
+          console.error(err);
+          alert('Unexpected error. Please retry.');
+        }
+      });
+    })();
+  </script>
+{% endblock %}

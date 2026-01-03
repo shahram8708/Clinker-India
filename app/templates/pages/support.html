@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% block title %}Contact & Support | Clinker India{% endblock %}
+{% block meta_description %}Contact Clinker India support for technical issues, billing questions, subscription help, feature requests, or partnerships. Submit a secure request and get a fast response.{% endblock %}
+{% block content %}
+<section class="support-hero position-relative overflow-hidden mb-5 rounded-4">
+  <div class="hero-grid"></div>
+  <div class="row align-items-center g-4 position-relative">
+    <div class="col-lg-8">
+      <div class="d-inline-flex align-items-center gap-2 pill-soft text-uppercase small mb-3">
+        <i class="bi bi-life-preserver text-accent"></i>
+        <span>Contact & Support</span>
+      </div>
+      <h1 class="display-5 fw-bold mb-3">We respond fast to keep your operations running.</h1>
+      <p class="text-secondary mb-0">Use this form for technical issues, billing and subscription help, feature requests, bug reports, general inquiries, or business partnerships. Every request is logged in our support ledger, routed to the right team, and acknowledged with a corporate-grade email to the platform admins.</p>
+    </div>
+    <div class="col-lg-4">
+      <div class="glass-card h-100 p-4 shadow-soft">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+          <div>
+            <p class="text-secondary small mb-1">Support coverage</p>
+            <h6 class="fw-semibold mb-0">Always-on diligence</h6>
+          </div>
+          <span class="icon-circle gradient-emerald"><i class="bi bi-headset"></i></span>
+        </div>
+        <ul class="checklist mb-3">
+          <li><i class="bi bi-clock-history text-accent"></i>Hours: 9:00 to 21:00 IST (critical issues monitored 24x7).</li>
+          <li><i class="bi bi-lightning-charge text-accent"></i>Response: under 4 business hours for P1/P2, under 1 business day for others.</li>
+          <li><i class="bi bi-inbox text-accent"></i>Channels: in-product form (preferred), email at support@clinker.ind.in.</li>
+          <li><i class="bi bi-envelope-check text-accent"></i>Status updates: ticket acknowledgement and follow-ups via email.</li>
+          <li><i class="bi bi-shield-lock text-accent"></i>Data handling: submissions are stored securely with tenant context where available.</li>
+        </ul>
+        <div class="d-grid gap-2">
+          <div class="info-chip"><i class="bi bi-shield-check"></i><span>Secure by default</span></div>
+          <div class="info-chip"><i class="bi bi-graph-up"></i><span>SLA-minded routing</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="mb-5">
+  <div class="row g-4">
+    <div class="col-lg-7">
+      <div class="section-card h-100">
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <span class="icon-circle gradient-blue"><i class="bi bi-journal-text"></i></span>
+          <h5 class="fw-semibold mb-0">Submit a support request</h5>
+        </div>
+        <form method="post" novalidate>
+          {{ form.hidden_tag() }}
+          <div style="display:none">{{ form.honeypot() }}</div>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label" for="fullName">{{ form.full_name.label.text }}</label>
+              {{ form.full_name(class_="form-control", id="fullName", placeholder="Your full name") }}
+              {% if form.full_name.errors %}<small class="text-danger">{{ form.full_name.errors[0] }}</small>{% endif %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="email">{{ form.email.label.text }}</label>
+              {{ form.email(class_="form-control", id="email", placeholder="name@company.com") }}
+              {% if form.email.errors %}<small class="text-danger">{{ form.email.errors[0] }}</small>{% endif %}
+            </div>
+            <div class="col-md-12">
+              <label class="form-label" for="subject">{{ form.subject.label.text }}</label>
+              {{ form.subject(class_="form-control", id="subject", placeholder="Short summary") }}
+              {% if form.subject.errors %}<small class="text-danger">{{ form.subject.errors[0] }}</small>{% endif %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="category">{{ form.category.label.text }}</label>
+              {{ form.category(class_="form-select", id="category") }}
+              {% if form.category.errors %}<small class="text-danger">{{ form.category.errors[0] }}</small>{% endif %}
+            </div>
+            <div class="col-md-12">
+              <label class="form-label" for="message">{{ form.message.label.text }}</label>
+              {{ form.message(class_="form-control", id="message", rows="6", placeholder="Describe the issue, impact, timeline, and any identifiers such as plant, route, scenario, or invoice.") }}
+              {% if form.message.errors %}<small class="text-danger">{{ form.message.errors[0] }}</small>{% endif %}
+            </div>
+            <div class="col-md-12 d-flex justify-content-end">
+              <button type="submit" class="btn btn-gradient px-4 d-inline-flex align-items-center gap-2">
+                <span class="btn-label">Submit request</span>
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+    <div class="col-lg-5">
+      <div class="section-card h-100">
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <span class="icon-circle gradient-emerald"><i class="bi bi-list-check"></i></span>
+          <h5 class="fw-semibold mb-0">Support categories</h5>
+        </div>
+        <ul class="checklist mb-3">
+          <li><i class="bi bi-cpu text-accent"></i>Technical Issue: access, performance, availability, integrations.</li>
+          <li><i class="bi bi-credit-card text-accent"></i>Billing / Payment Support: invoices, GST, payment status.</li>
+          <li><i class="bi bi-building-gear text-accent"></i>Organization / Subscription Help: seats, roles, plan changes.</li>
+          <li><i class="bi bi-stars text-accent"></i>Feature Request: roadmap proposals with business outcomes.</li>
+          <li><i class="bi bi-bug text-accent"></i>Bug Report: steps, expected vs actual, timestamps.</li>
+          <li><i class="bi bi-shield-lock text-accent"></i>General Inquiry: product, security, compliance.</li>
+          <li><i class="bi bi-people text-accent"></i>Business / Partnership: distribution, co-selling, integrations.</li>
+          <li><i class="bi bi-three-dots text-accent"></i>Other: anything else we should know.</li>
+        </ul>
+        <div class="p-3 rounded-3 bg-black border border-opacity-10 d-grid gap-2">
+          <p class="fw-semibold mb-1">Direct contacts</p>
+          <div class="info-chip"><i class="bi bi-envelope"></i><span>support@clinker.ind.in</span></div>
+          <div class="info-chip"><i class="bi bi-shield-lock"></i><span>privacy@clinker.ind.in</span></div>
+          <div class="info-chip"><i class="bi bi-people"></i><span>partnerships@clinker.ind.in</span></div>
+          <p class="text-secondary small mb-0">For severity 1 incidents, include subject prefix "P1" and a phone-back number.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="mb-5">
+  <div class="section-card">
+    <div class="d-flex align-items-center gap-2 mb-3">
+      <span class="icon-circle gradient-blue"><i class="bi bi-diagram-3"></i></span>
+      <h5 class="fw-semibold mb-0">Contact workflow and system behavior</h5>
+    </div>
+    <ol class="numbered-list text-secondary mb-4">
+      <li>User submits the form with CSRF protection and input validation.</li>
+      <li>Request is persisted in the support ledger with organization and user context when available, plus IP and user agent for traceability.</li>
+      <li>An HTML email is sent to the platform admin mailbox with a formatted summary (category badge, subject, requester, message).</li>
+      <li>Admin triages the ticket, updates status, and replies to the requester using the reply-to address.</li>
+      <li>Audit: submissions and status changes remain queryable; sensitive details are kept within tenant scope.</li>
+    </ol>
+    <div class="row g-3">
+      <div class="col-lg-4">
+        <div class="pillar-card h-100">
+          <p class="small text-uppercase text-secondary mb-1">Database / log storage</p>
+          <p class="text-secondary small mb-0">Store requests in a dedicated table with fields for user, organization, category, subject, message, IP, user agent, and status (open, acknowledged, closed). Retain logs with timestamps for audits.</p>
+        </div>
+      </div>
+      <div class="col-lg-4">
+        <div class="pillar-card h-100">
+          <p class="small text-uppercase text-secondary mb-1">Admin handling</p>
+          <p class="text-secondary small mb-0">Assign categories to resolver queues, set SLA timers, and ensure reply-to uses the requester email. Maintain an internal note field for remediation steps.</p>
+        </div>
+      </div>
+      <div class="col-lg-4">
+        <div class="pillar-card h-100">
+          <p class="small text-uppercase text-secondary mb-1">Email best practices</p>
+          <p class="text-secondary small mb-0">Send via authenticated SMTP, include plain-text fallbacks, avoid inline JavaScript, and sign emails with DKIM/SPF. Prefer UTF-8 text-only content and link to the ticket URL when available.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="mb-4">
+  <div class="row g-4">
+    <div class="col-lg-6">
+      <div class="section-card h-100">
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <span class="icon-circle gradient-blue"><i class="bi bi-shield-shaded"></i></span>
+          <h6 class="fw-semibold mb-0">Security considerations</h6>
+        </div>
+        <ul class="checklist mb-0">
+          <li><i class="bi bi-speedometer2 text-accent"></i>Rate-limit and throttle submissions; reject if honeypot is filled.</li>
+          <li><i class="bi bi-code-square text-accent"></i>Validate input length; store HTML-escaped; avoid executing user content.</li>
+          <li><i class="bi bi-eye text-accent"></i>Log IP and user agent for abuse detection; protect logs with least privilege.</li>
+          <li><i class="bi bi-lock text-accent"></i>Ensure transport encryption (HTTPS) end to end.</li>
+          <li><i class="bi bi-clipboard-check text-accent"></i>Provide admins with audit logs of status changes and responses.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="section-card h-100">
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <span class="icon-circle gradient-emerald"><i class="bi bi-magic"></i></span>
+          <h6 class="fw-semibold mb-0">UX guidance</h6>
+        </div>
+        <ul class="checklist mb-0">
+          <li><i class="bi bi-check2-circle text-accent"></i>Show inline validation errors and keep the form data when validation fails.</li>
+          <li><i class="bi bi-bell text-accent"></i>After success, flash a confirmation and clarify expected response time.</li>
+          <li><i class="bi bi-arrow-repeat text-accent"></i>On failure, ask the user to retry and provide the support email as backup.</li>
+          <li><i class="bi bi-tags text-accent"></i>Use concise labels, clear categories, and supportive placeholders.</li>
+          <li><i class="bi bi-universal-access text-accent"></i>Keep the form accessible: keyboard focus order, labeled inputs, ARIA where needed.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark light">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    {% set default_title = "Clinker India | AI Copilot for Industrial Operations" %}
+    {% set canonical_url = request.base_url %}
+    {% set logo_url = url_for('static', filename='img/logo.png', _external=True) %}
+    <title>{% block title %}{{ default_title }}{% endblock %}</title>
+    <meta name="description" content="{% block meta_description %}Intelligent AI copilot for cement and materials operations—optimize plant decisions, safety, and uptime with secure, enterprise-grade automation from Clinker India.{% endblock %}">
+    <meta name="keywords" content="{% block meta_keywords %}industrial ai copilot, clinker india platform, cement operations optimization, production scheduling ai, maintenance intelligence, supply chain visibility, operations analytics saas{% endblock %}">
+    <meta name="robots" content="{% block meta_robots %}index,follow,max-snippet:-1,max-image-preview:large,max-video-preview:-1{% endblock %}">
+    <meta name="language" content="en">
+    <meta http-equiv="content-language" content="en">
+    <meta name="application-name" content="Clinker India">
+    <meta name="author" content="Clinker India">
+    <meta name="theme-color" content="#0b1727">
+    <link rel="canonical" href="{{ canonical_url }}">
+    <link rel="alternate" hreflang="en" href="{{ canonical_url }}">
+    <link rel="icon" href="{{ logo_url }}" type="image/png">
+    <meta property="og:type" content="{% block og_type %}website{% endblock %}">
+    <meta property="og:site_name" content="Clinker India">
+    <meta property="og:title" content="{{ self.title()|striptags }}">
+    <meta property="og:description" content="{{ self.meta_description()|striptags }}">
+    <meta property="og:url" content="{{ canonical_url }}">
+    <meta property="og:image" content="{{ logo_url }}">
+    <meta property="og:image:alt" content="Clinker India logo">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:site" content="@clinkerindia">
+    <meta name="twitter:title" content="{{ self.title()|striptags }}">
+    <meta name="twitter:description" content="{{ self.meta_description()|striptags }}">
+    <meta name="twitter:image" content="{{ logo_url }}">
+    <meta name="twitter:image:alt" content="Clinker India logo">
+    <meta name="twitter:creator" content="@clinkerindia">
+    <script type="application/ld+json">
+    {{ {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "Clinker India",
+      "url": request.url_root.rstrip('/'),
+      "logo": logo_url,
+      "description": self.meta_description()|striptags,
+      "contactPoint": [
+        {
+          "@type": "ContactPoint",
+          "telephone": "+91-0000000000",
+          "contactType": "customer support",
+          "areaServed": "IN",
+          "availableLanguage": ["en"]
+        }
+      ],
+      "sameAs": [
+        "https://www.linkedin.com/company/clinker-india",
+        "https://twitter.com/clinkerindia"
+      ]
+    } | tojson(indent=2) }}
+    </script>
+    <script type="application/ld+json">
+    {{ {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "Clinker India",
+      "url": request.url_root.rstrip('/'),
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": request.url_root.rstrip('/') ~ "/search?q={search_term_string}",
+        "query-input": "required name=search_term_string"
+      }
+    } | tojson(indent=2) }}
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+    <style>
+      body.gradient-page {
+        background: radial-gradient(circle at 10% 20%, rgba(70, 108, 255, 0.08), transparent 25%),
+                    radial-gradient(circle at 80% 10%, rgba(255, 154, 62, 0.08), transparent 22%),
+                    radial-gradient(circle at 30% 80%, rgba(99, 255, 197, 0.08), transparent 24%),
+                    #0b1727;
+      }
+
+      .app-shell {
+        gap: 1.25rem;
+        padding: 1rem 1.5rem 1.5rem;
+      }
+
+      .premium-navbar {
+        background: linear-gradient(120deg, rgba(19, 32, 52, 0.92), rgba(12, 21, 35, 0.92));
+        border-color: rgba(255, 255, 255, 0.08) !important;
+        box-shadow: 0 10px 40px rgba(5, 9, 16, 0.6), 0 1px 0 rgba(255, 255, 255, 0.04);
+        backdrop-filter: blur(14px);
+      }
+
+      .brand-mark {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 12px;
+      }
+
+      .brand-mark img {
+        width: auto;
+        display: block;
+      }
+
+      .navbar-brand .brand-pill {
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        color: #dfe6f3;
+        font-size: 0.75rem;
+        letter-spacing: 0.04em;
+      }
+
+      .nav-main-links a {
+        position: relative;
+        font-weight: 600;
+        color: #d6deec;
+        padding-bottom: 0.2rem;
+        transition: color 180ms ease, transform 180ms ease;
+      }
+
+      .nav-main-links a::after {
+        content: '';
+        position: absolute;
+        left: 0;
+        bottom: -0.35rem;
+        width: 0;
+        height: 2px;
+        background: linear-gradient(90deg, #7fd1ff, #6cf0c2);
+        transition: width 200ms ease;
+      }
+
+      .nav-main-links a:hover,
+      .nav-main-links a:focus-visible {
+        color: #ffffff;
+        transform: translateY(-1px);
+      }
+
+      .nav-main-links a:hover::after,
+      .nav-main-links a:focus-visible::after {
+        width: 100%;
+      }
+
+      .btn-ghost {
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.02);
+        transition: all 160ms ease;
+      }
+
+      .btn-ghost:hover,
+      .btn-ghost:focus-visible {
+        background: rgba(255, 255, 255, 0.08);
+        transform: translateY(-1px);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+      }
+
+      .btn-icon {
+        width: 42px;
+        height: 42px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .btn-spinner {
+        display: none;
+      }
+
+      button.loading .btn-spinner,
+      input.loading-input + .btn-spinner {
+        display: inline-flex;
+      }
+
+      button.loading .btn-label {
+        visibility: hidden;
+      }
+
+      .avatar-circle {
+        background: linear-gradient(135deg, #7fd1ff, #6cf0c2);
+        color: #081221;
+        font-weight: 700;
+      }
+
+      .chip,
+      .role-chip {
+        border-radius: 999px;
+        padding: 0.25rem 0.65rem;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.05);
+      }
+
+      .chip-info {
+        color: #9ad8ff;
+      }
+
+      .app-main {
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0));
+        border: 1px solid rgba(255, 255, 255, 0.04);
+        border-radius: 24px;
+        box-shadow: 0 25px 60px rgba(0, 0, 0, 0.35);
+      }
+
+      .content-container {
+        max-width: 1400px;
+      }
+
+      .shadow-soft {
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35), 0 1px 0 rgba(255, 255, 255, 0.04);
+      }
+
+      .sidebar-wrapper {
+        width: 280px;
+        position: sticky;
+        top: 0;
+        align-self: flex-start;
+      }
+
+      .sidebar {
+        background: linear-gradient(180deg, #101a2d, #0d1626);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 20px;
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.4);
+        padding: 1.25rem 1rem;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .sidebar::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle at 20% 20%, rgba(111, 205, 255, 0.08), transparent 35%),
+                    radial-gradient(circle at 80% 0%, rgba(255, 179, 82, 0.07), transparent 30%);
+        pointer-events: none;
+      }
+
+      .sidebar-header {
+        position: relative;
+        z-index: 1;
+        margin-bottom: 0.75rem;
+      }
+
+      .sidebar-nav {
+        position: relative;
+        z-index: 1;
+      }
+
+      .sidebar-section {
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        font-size: 0.7rem;
+        color: #7ba5d9;
+      }
+
+      .sidebar-link {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.65rem 0.85rem;
+        border-radius: 12px;
+        color: #d8e4f4;
+        text-decoration: none;
+        transition: all 160ms ease;
+        position: relative;
+      }
+
+      .sidebar-link .nav-indicator {
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.25);
+        flex-shrink: 0;
+      }
+
+      .sidebar-link.active,
+      .sidebar-link:hover,
+      .sidebar-link:focus-visible {
+        background: rgba(111, 205, 255, 0.08);
+        color: #ffffff;
+        box-shadow: inset 0 0 0 1px rgba(111, 205, 255, 0.25);
+      }
+
+      .sidebar-link.active .nav-indicator,
+      .sidebar-link:hover .nav-indicator,
+      .sidebar-link:focus-visible .nav-indicator {
+        background: linear-gradient(135deg, #7fd1ff, #6cf0c2);
+        width: 8px;
+        height: 8px;
+      }
+
+      .sidebar-footer {
+        position: relative;
+        z-index: 1;
+        margin-top: 1rem;
+        padding: 0.85rem 0.9rem;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+      }
+
+      .toast.premium-toast {
+        backdrop-filter: blur(14px);
+        box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+      }
+
+      .offcanvas.bg-dark {
+        background: linear-gradient(180deg, #0f1a2c, #0a1321);
+      }
+
+      .ai-chat-launcher,
+      .ai-chat-panel {
+        backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+      }
+    </style>
+    {% block head_extra %}{% endblock %}
+  </head>
+  <body class="bg-canvas text-body gradient-page">
+    {% include 'layout/navbar.html' %}
+
+    <div class="app-shell d-lg-flex">
+      <aside class="sidebar-wrapper d-none d-lg-block" aria-label="Primary navigation">
+        {% include 'layout/sidebar.html' %}
+      </aside>
+
+      <main class="app-main flex-grow-1" id="main-content">
+        <div class="container-fluid py-4 content-container">
+          {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+              <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1080;">
+                {% for category, message in messages %}
+                  {% set tone = category if category in ['success','info','warning','danger'] else 'secondary' %}
+                  {% set icon = {'success':'bi-check-circle','info':'bi-info-circle','warning':'bi-exclamation-triangle','danger':'bi-shield-exclamation','secondary':'bi-bell'}[tone] %}
+                  <div class="toast premium-toast text-bg-{{ tone }} border-0 show" role="alert" aria-live="assertive" aria-atomic="true" data-bs-autohide="true" data-bs-delay="5200">
+                    <div class="d-flex align-items-center gap-3">
+                      <div class="toast-icon rounded-circle d-inline-flex align-items-center justify-content-center"><i class="bi {{ icon }}"></i></div>
+                      <div class="toast-body">{{ message }}</div>
+                      <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            {% endif %}
+          {% endwith %}
+
+          {% block content %}{% endblock %}
+        </div>
+      </main>
+    </div>
+
+    <div class="offcanvas offcanvas-start bg-dark text-white" tabindex="-1" id="mobileSidebar" aria-labelledby="mobileSidebarLabel">
+      <div class="offcanvas-header border-bottom border-opacity-25">
+        <h5 class="offcanvas-title" id="mobileSidebarLabel">Navigation</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+      </div>
+      <div class="offcanvas-body p-0">
+        {% include 'layout/sidebar.html' %}
+      </div>
+    </div>
+
+    {% if current_user.is_authenticated %}
+      <div class="ai-chat-launcher" id="aiChatLauncher" role="button" aria-label="Open AI assistant" tabindex="0">
+        <div class="ai-chat-launcher__icon"><i class="bi bi-stars"></i></div>
+        <div class="ai-chat-launcher__label">
+          <span class="ai-chat-pill">AI</span>
+          <span class="ai-chat-launcher__text">Ask Clinker India</span>
+        </div>
+      </div>
+
+      <section class="ai-chat-panel shadow-soft" id="aiChatPanel" role="dialog" aria-modal="false" aria-label="AI assistant chat" aria-hidden="true">
+        <header class="ai-chat-panel__header">
+          <div>
+            <div class="ai-chat-panel__title">AI Copilot</div>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <span class="ai-chat-pill">Live</span>
+            <button type="button" class="btn btn-ghost btn-sm" id="aiChatClose" aria-label="Close chat"><i class="bi bi-x-lg"></i></button>
+          </div>
+        </header>
+
+        <div class="ai-chat-panel__body">
+          <div class="ai-chat-messages" id="aiChatMessages" role="log" aria-live="polite"></div>
+        </div>
+
+        <footer class="ai-chat-panel__input">
+          <div class="ai-chat-input__controls">
+            <textarea id="aiChatInput" class="form-control" rows="2" placeholder="Ask about this page..." aria-label="Chat message"></textarea>
+            <button type="button" class="btn btn-gradient" id="aiChatSend">
+              <span class="d-none d-sm-inline">Send</span>
+              <i class="bi bi-arrow-up-short"></i>
+            </button>
+          </div>
+          <div class="ai-chat-hint">Shift + Enter newline</div>
+        </footer>
+      </section>
+
+      <script>
+        window.aiChatConfig = {
+          endpoint: "{{ url_for('main.ai_chat') }}",
+          userName: {{ (current_user.full_name or current_user.email or '') | tojson }},
+        };
+      </script>
+      <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+      <script src="{{ url_for('static', filename='js/ai-chat.js') }}"></script>
+    {% endif %}
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/button_spinner.js') }}"></script>
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('.toast').forEach(toastEl => new bootstrap.Toast(toastEl).show());
+      });
+
+      // Subtle ripple for interactive elements tagged with data-ripple
+      document.addEventListener('click', (event) => {
+        const target = event.target.closest('[data-ripple]');
+        if (!target) return;
+        const circle = document.createElement('span');
+        const diameter = Math.max(target.clientWidth, target.clientHeight);
+        const radius = diameter / 2;
+        circle.style.width = circle.style.height = `${diameter}px`;
+        circle.style.left = `${event.clientX - target.getBoundingClientRect().left - radius}px`;
+        circle.style.top = `${event.clientY - target.getBoundingClientRect().top - radius}px`;
+        circle.classList.add('ripple');
+        const ripple = target.getElementsByClassName('ripple')[0];
+        if (ripple) ripple.remove();
+        target.appendChild(circle);
+      });
+    </script>
+    {% block scripts %}{% endblock %}
+  </body>
+</html>

@@ -1,0 +1,366 @@
+{% extends "base.html" %}
+{% block title %}Dashboard | Clinker Ops{% endblock %}
+{% block content %}
+<div class="row g-4">
+  <div class="col-12">
+    {% if pending_invites %}
+    <div class="alert alert-info border-0 shadow-soft d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3 mb-4">
+      <div class="d-flex align-items-center gap-2">
+        <span class="badge rounded-pill text-bg-info"><i class="bi bi-envelope-check"></i> Join request</span>
+        <div class="fw-semibold">You have pending invitations to join another organization.</div>
+      </div>
+      <div class="d-flex flex-column gap-2 ms-md-auto w-100 w-md-auto">
+        {% for invite in pending_invites %}
+        <div class="d-flex flex-column flex-lg-row align-items-start align-items-lg-center gap-2 border rounded-3 px-3 py-2 bg-dark bg-opacity-50">
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <span class="fw-semibold">{{ invite.org_name }}</span>
+            <span class="chip chip-info d-inline-flex align-items-center gap-1"><i class="bi bi-shield-lock"></i>{{ invite.role|capitalize }}</span>
+            <span class="text-secondary xsmall">Expires {{ invite.expires_label }}</span>
+          </div>
+          <form method="POST" action="{{ url_for('main.accept_self_invitation', invitation_id=invite.id) }}" class="ms-lg-auto">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-primary btn-sm" type="submit" data-ripple>
+              <i class="bi bi-check2-circle me-1"></i>Join organization
+            </button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="card hero-card border-0 shadow-soft overflow-hidden">
+      <div class="card-body position-relative p-4 p-md-5 dashboard-hero">
+        <div class="hero-bg"></div>
+        <div class="floating-dots"></div>
+        <div class="d-flex flex-column gap-4 position-relative">
+          <div class="d-flex flex-column flex-lg-row align-items-start align-items-lg-center justify-content-between gap-4">
+            <div class="d-flex flex-column gap-3">
+              <div class="d-flex align-items-center flex-wrap gap-2">
+                <span class="hero-chip"><i class="bi bi-stars me-1"></i>Clinker Command</span>
+                <span class="badge rounded-pill text-bg-primary d-inline-flex align-items-center gap-2"><i class="bi bi-building"></i>{{ greeting.org_name }}</span>
+                <span class="role-chip d-inline-flex align-items-center gap-2"><i class="bi bi-shield-lock"></i>{{ 'Admin' if current_user.is_org_admin else 'User' }}</span>
+              </div>
+              <div>
+                <p class="text-uppercase text-secondary small mb-1">Operations cockpit</p>
+                <h1 class="display-6 mb-0">Hello, {{ greeting.user_name }}</h1>
+              </div>
+              <div class="d-flex flex-wrap align-items-center gap-3 text-secondary small">
+                <span class="d-flex align-items-center gap-2"><i class="bi bi-buildings"></i>{{ greeting.org_name }}</span>
+                <span class="d-flex align-items-center gap-2"><i class="bi bi-person-badge"></i>{{ current_user.role|capitalize }}</span>
+                <span class="d-flex align-items-center gap-2"><i class="bi bi-clock-history"></i>{{ greeting.timestamp.strftime('%b %d, %Y %H:%M UTC') }}</span>
+              </div>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+              <a href="{{ url_for('ops.network') }}" class="btn btn-primary" data-ripple><i class="bi bi-diagram-3 me-2"></i>Open network control</a>
+              {% if current_user.is_org_admin %}
+                <a href="{{ url_for('auth.invite_user') }}" class="btn btn-outline-light" data-ripple><i class="bi bi-envelope-plus me-2"></i>Invite user</a>
+              {% else %}
+                <a href="{{ url_for('ops.network') }}#inventory" class="btn btn-outline-light" data-ripple><i class="bi bi-box-seam me-2"></i>Update inventory</a>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="row g-3 g-lg-4 hero-stats">
+            <div class="col-12 col-sm-6 col-lg-3">
+              <div class="glow-stat">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                  <span class="text-secondary small">Network scope</span>
+                  <span class="chip chip-soft">Live</span>
+                </div>
+                <div class="d-flex align-items-center gap-3">
+                  <div class="stat-icon gradient-blue"><i class="bi bi-building"></i></div>
+                  <div class="flex-grow-1">
+                    <div class="stat-value mb-0">{{ metrics.total_plants }}</div>
+                    <div class="stat-sub">IU {{ metrics.iu_count }} · GU {{ metrics.gu_count }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="col-12 col-sm-6 col-lg-3">
+              <div class="glow-stat">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                  <span class="text-secondary small">Transport routes</span>
+                  <span class="chip chip-info">{{ metrics.active_routes }}</span>
+                </div>
+                <div class="d-flex align-items-center gap-3">
+                  <div class="stat-icon gradient-emerald"><i class="bi bi-truck"></i></div>
+                  <div class="flex-grow-1">
+                    <div class="stat-sub">Active lanes ready</div>
+                    <div class="progress progress-thin mt-2"><div class="progress-bar bg-success" style="width: 82%"></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="col-12 col-sm-6 col-lg-3">
+              <div class="glow-stat">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                  <span class="text-secondary small">Safety coverage</span>
+                  <span class="chip {{ 'chip-soft' if inventory_alerts|length == 0 else 'chip-warning' }}">{{ inventory_alerts|length }} alerts</span>
+                </div>
+                <div class="d-flex align-items-center gap-3">
+                  <div class="stat-icon gradient-amber"><i class="bi bi-activity"></i></div>
+                  <div class="flex-grow-1">
+                    <div class="stat-sub">Inventory health</div>
+                    <div class="progress progress-thin mt-2"><div class="progress-bar bg-warning" style="width: 64%"></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="col-12 col-sm-6 col-lg-3">
+              <div class="glow-stat">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                  <span class="text-secondary small">Scenario lab</span>
+                  <span class="chip chip-info">{{ metrics.scenario_count }}</span>
+                </div>
+                <div class="d-flex align-items-center gap-3">
+                  <div class="stat-icon gradient-blue"><i class="bi bi-cpu"></i></div>
+                  <div class="flex-grow-1">
+                    <div class="stat-sub">Latest experiments</div>
+                    <div class="progress progress-thin mt-2"><div class="progress-bar bg-info" style="width: 70%"></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="row g-3">
+      <div class="col-12 col-sm-6 col-xl-3">
+        <div class="kpi-card card h-100 shadow-soft hover-lift">
+          <div class="card-body d-flex align-items-center gap-3">
+            <div class="kpi-icon bg-primary-subtle text-primary"><i class="bi bi-building"></i></div>
+            <div>
+              <div class="h4 mb-0">{{ metrics.total_plants }}</div>
+              <p class="text-secondary mb-0 small">Plants (IU {{ metrics.iu_count }} | GU {{ metrics.gu_count }})</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-sm-6 col-xl-3">
+        <div class="kpi-card card h-100 shadow-soft hover-lift">
+          <div class="card-body d-flex align-items-center gap-3">
+            <div class="kpi-icon bg-success-subtle text-success"><i class="bi bi-truck"></i></div>
+            <div>
+              <div class="h4 mb-0">{{ metrics.active_routes }}</div>
+              <p class="text-secondary mb-0 small">Active transport routes</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-sm-6 col-xl-3">
+        <div class="kpi-card card h-100 shadow-soft hover-lift">
+          <div class="card-body d-flex align-items-center gap-3">
+            <div class="kpi-icon bg-warning-subtle text-warning"><i class="bi bi-bell"></i></div>
+            <div>
+              <div class="h4 mb-0">{{ inventory_alerts|length }}</div>
+              <p class="text-secondary mb-0 small">Safety stock alerts</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-sm-6 col-xl-3">
+        <div class="kpi-card card h-100 shadow-soft hover-lift">
+          <div class="card-body d-flex align-items-center gap-3">
+            <div class="kpi-icon bg-info-subtle text-info"><i class="bi bi-cpu"></i></div>
+            <div>
+              <div class="h4 mb-0">{{ metrics.scenario_count }}</div>
+              <p class="text-secondary mb-0 small">Recent scenarios</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-8">
+    <div class="card shadow-soft h-100 surface-card">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start mb-3">
+          <div>
+            <p class="text-uppercase text-secondary small mb-1">Network summary</p>
+            <h2 class="h5 mb-0 d-flex align-items-center gap-2"><i class="bi bi-diagram-3"></i>Flow-ready clinker topology</h2>
+          </div>
+          <a href="{{ url_for('ops.network') }}" class="chip chip-soft text-decoration-none d-inline-flex align-items-center gap-2"><i class="bi bi-box-arrow-up-right"></i>Open module</a>
+        </div>
+        <div class="row g-3">
+          <div class="col-12 col-md-6">
+            <div class="tile-panel h-100">
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <span class="text-secondary small">Plants created</span>
+                <span class="chip chip-info d-inline-flex align-items-center gap-1"><i class="bi bi-building"></i>{{ metrics.total_plants }}</span>
+              </div>
+              <ul class="list-unstyled mb-0 text-secondary small d-flex flex-column gap-2">
+                {% for plant in plants %}
+                  <li class="d-flex align-items-center gap-2 tile-row">
+                    <div class="tile-icon text-primary"><i class="bi bi-building"></i></div>
+                    <span class="flex-grow-1">{{ plant.plant_name }} ({{ 'IU' if plant.plant_type == 'IU' else 'GU' }})</span>
+                    <span class="chip {{ 'chip-info' if plant.status == 'active' else 'chip-soft' }}">{{ plant.status|capitalize }}</span>
+                  </li>
+                {% endfor %}
+                {% if not plants %}
+                  <li class="text-secondary">No plants defined yet.</li>
+                {% endif %}
+              </ul>
+            </div>
+          </div>
+          <div class="col-12 col-md-6">
+            <div class="tile-panel h-100">
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <span class="text-secondary small">Transport readiness</span>
+                <span class="chip chip-success d-inline-flex align-items-center gap-1"><i class="bi bi-check-circle"></i>Live</span>
+              </div>
+              <ul class="list-unstyled mb-0 text-secondary small d-flex flex-column gap-2">
+                {% for route in routes %}
+                  <li class="d-flex align-items-center gap-2 tile-row">
+                    <div class="tile-icon text-info"><i class="bi bi-truck"></i></div>
+                    <span class="flex-grow-1">{{ route.source_plant.plant_name }} -> {{ route.destination_plant.plant_name }}</span>
+                    <span class="chip chip-info">{{ route.mode }}</span>
+                    <span class="chip {{ 'chip-info' if route.status == 'active' else 'chip-soft' }}">{{ route.status|capitalize }}</span>
+                  </li>
+                {% endfor %}
+                {% if not routes %}
+                  <li class="text-secondary">No routes captured yet.</li>
+                {% endif %}
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-4">
+    <div class="card shadow-soft h-100 surface-card">
+      <div class="card-body d-flex flex-column gap-3">
+        <div class="d-flex align-items-center justify-content-between">
+          <div>
+            <p class="text-uppercase text-secondary small mb-1">Safety stock</p>
+            <h2 class="h6 mb-0 d-flex align-items-center gap-2"><i class="bi bi-shield-check"></i>Alerts and priorities</h2>
+          </div>
+          <span class="chip {{ 'chip-info' if inventory_alerts|length == 0 else 'chip-warning' }}">{{ inventory_alerts|length }} tracked</span>
+        </div>
+        {% if inventory_alerts %}
+          <div class="d-flex flex-column gap-2">
+            {% for inv in inventory_alerts %}
+              <div class="action-tile">
+                <div class="d-flex flex-column">
+                  <span class="fw-semibold d-flex align-items-center gap-2"><i class="bi bi-geo-alt text-warning"></i>{{ inv.plant.plant_name }}</span>
+                  <span class="text-secondary small">Stock {{ '%.0f'|format(inv.current_inventory) }} / Safety {{ '%.0f'|format(inv.plant.safety_stock_level) }}</span>
+                </div>
+                <span class="chip chip-warning ms-auto">Below threshold</span>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="text-secondary small mb-0">All plants are within safety stock.</p>
+        {% endif %}
+        <div class="d-flex flex-wrap gap-2">
+          <a href="{{ url_for('ops.network') }}#inventory" class="btn btn-outline-light btn-sm" data-ripple><i class="bi bi-upload me-1"></i>Update inventory</a>
+          {% if current_user.is_org_admin %}
+            <a href="{{ url_for('ops.network') }}#plants" class="btn btn-light btn-sm" data-ripple><i class="bi bi-plus-circle me-1"></i>Add plant</a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-6">
+    <div class="card shadow-soft h-100 surface-card">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div>
+            <p class="text-uppercase text-secondary small mb-1">Planning scenarios</p>
+            <h2 class="h6 mb-0 d-flex align-items-center gap-2"><i class="bi bi-graph-up"></i>Recent simulations</h2>
+          </div>
+          <a href="{{ url_for('ops.network') }}#scenarios" class="btn btn-outline-light btn-sm" data-ripple><i class="bi bi-magic"></i>Create scenario</a>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-premium align-middle mb-0">
+            <thead class="table-dark">
+              <tr>
+                <th>Name</th>
+                <th>Periods</th>
+                <th>Status</th>
+                <th>Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for scenario in scenarios %}
+                <tr>
+                  <td class="fw-semibold d-flex align-items-center gap-2"><i class="bi bi-activity text-info"></i>{{ scenario.scenario_name }}</td>
+                  <td>{{ scenario.periods }}</td>
+                  <td>
+                    <span class="chip {% if scenario.status == 'completed' %}chip-info{% elif scenario.status == 'executed' %}chip-soft{% else %}chip-soft{% endif %}">{{ scenario.status|capitalize }}</span>
+                  </td>
+                  <td>{{ scenario.result_cost or 'N/A' }}</td>
+                </tr>
+              {% endfor %}
+              {% if not scenarios %}
+                <tr><td colspan="4" class="text-secondary small">No scenarios yet.</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-6">
+    <div class="card shadow-soft h-100 surface-card">
+      <div class="card-body d-flex flex-column gap-3">
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <p class="text-uppercase text-secondary small mb-1">People & access</p>
+            <h2 class="h6 mb-0 d-flex align-items-center gap-2"><i class="bi bi-people"></i>User governance</h2>
+          </div>
+          <span class="chip chip-success d-inline-flex align-items-center gap-1"><i class="bi bi-record-circle"></i>{{ metrics.active_users }} active</span>
+        </div>
+        <ul class="list-unstyled mb-2 text-secondary small d-flex flex-column gap-2">
+          <li class="d-flex align-items-center gap-2 tile-row"><i class="bi bi-people text-primary"></i>Total users: {{ metrics.total_users }}</li>
+          <li class="d-flex align-items-center gap-2 tile-row"><i class="bi bi-shield-check text-success"></i>Active users: {{ metrics.active_users }}</li>
+          <li class="d-flex align-items-center gap-2 tile-row"><i class="bi bi-bell text-warning"></i>Pending invites: {{ metrics.pending_invites }}</li>
+          <li class="d-flex align-items-center gap-2 tile-row"><i class="bi bi-activity text-info"></i>Org status: {{ metrics.org_status }}</li>
+        </ul>
+        {% if current_user.is_org_admin %}
+          <div class="d-flex flex-wrap gap-2">
+            <a href="{{ url_for('tenant.user_management') }}" class="btn btn-light btn-sm" data-ripple><i class="bi bi-person-gear me-1"></i>Manage users</a>
+            <a href="{{ url_for('auth.invite_user') }}" class="btn btn-outline-light btn-sm" data-ripple><i class="bi bi-envelope-plus me-1"></i>Send invite</a>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card shadow-soft surface-card">
+      <div class="card-body d-flex flex-column flex-lg-row align-items-start align-items-lg-center justify-content-between gap-3">
+        <div class="d-flex flex-column gap-2">
+          <p class="text-uppercase text-secondary small mb-0">Readiness checklist</p>
+          <h2 class="h6 mb-1 d-flex align-items-center gap-2"><i class="bi bi-layers"></i>Data integrity & safeguards</h2>
+          <div class="d-flex gap-3 text-secondary small flex-wrap">
+            <span class="d-flex align-items-center gap-1"><i class="bi bi-check-circle text-success"></i>Tenant filters on every query</span>
+            <span class="d-flex align-items-center gap-1"><i class="bi bi-check-circle text-success"></i>Route validation prevents loops</span>
+            <span class="d-flex align-items-center gap-1"><i class="bi bi-check-circle text-success"></i>Safety stock alerts surfaced</span>
+          </div>
+        </div>
+        <div class="d-flex flex-wrap gap-2 ms-lg-auto">
+          <a href="{{ url_for('ops.network') }}" class="btn btn-primary" data-ripple><i class="bi bi-diagram-3 me-2"></i>Open operations</a>
+          {% if current_user.is_org_admin %}
+            <a href="{{ url_for('ops.network') }}#routes" class="btn btn-outline-light" data-ripple><i class="bi bi-truck me-2"></i>Add transport route</a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script src="{{ url_for('static', filename='js/button_spinner.js') }}"></script>
+{% endblock %}

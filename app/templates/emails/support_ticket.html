@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Clinker India Support Ticket</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg-deep: #071024;
+        --bg-card: #0f172a;
+        --bg-panel: #0c1326;
+        --bg-muted: #111a31;
+        --primary: #60a5fa;
+        --secondary: #22d3ee;
+        --accent: #7c3aed;
+        --text-main: #f8fafc;
+        --text-subtle: #9ca3af;
+        --border: #1d2740;
+        --shadow-strong: 0 24px 70px rgba(0, 0, 0, 0.38);
+        --shadow-soft: 0 14px 36px rgba(0, 0, 0, 0.24);
+        --radius-lg: 18px;
+        --radius-md: 14px;
+        --radius-sm: 10px;
+        --font: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+      }
+      * { box-sizing: border-box; }
+      body {
+        font-family: var(--font);
+        background:radial-gradient(circle at 18% 18%, rgba(96,165,250,0.12), transparent 32%),
+                   radial-gradient(circle at 78% 12%, rgba(34,211,238,0.14), transparent 28%),
+                   radial-gradient(circle at 42% 78%, rgba(124,58,237,0.10), transparent 34%),
+                   linear-gradient(150deg,var(--bg-deep),#0b1833 45%,#0a122a);
+        color: var(--text-main);
+        margin: 0;
+        padding: 0;
+      }
+      .wrapper {
+        width: 100%;
+        min-height: 100vh;
+        padding: 42px 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .mail-card {
+        max-width: 780px;
+        width: 100%;
+        background: linear-gradient(160deg, var(--bg-card), var(--bg-panel));
+        border:1px solid var(--border);
+        border-radius: var(--radius-lg);
+        padding: 30px 30px 26px;
+        box-shadow: var(--shadow-strong);
+        position: relative;
+        overflow: hidden;
+      }
+      .mail-card::after {
+        content: "";
+        position: absolute;
+        inset: -10% -22% auto auto;
+        width: 320px;
+        height: 320px;
+        background: radial-gradient(circle at 40% 40%, rgba(96,165,250,0.12), transparent 62%);
+        opacity: 0.6;
+        filter: blur(2px);
+        pointer-events: none;
+      }
+      .accent-bar {
+        height: 6px;
+        width: 100%;
+        background: linear-gradient(90deg, var(--primary), var(--secondary), var(--accent));
+        border-radius: 999px;
+        margin:-6px 0 18px;
+      }
+      .heading {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 14px;
+        align-items: center;
+        margin-bottom: 6px;
+      }
+      .title {
+        font-size: 22px;
+        font-weight: 800;
+        color: var(--text-main);
+        letter-spacing: 0.2px;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .subtitle { font-size: 13px; color: var(--text-subtle); margin-top: 2px; }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 14px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        background: linear-gradient(135deg, var(--primary), var(--secondary));
+        color: #0b1220;
+        box-shadow: 0 12px 32px rgba(96,165,250,0.28);
+      }
+      .section-title {
+        font-size: 12px;
+        text-transform: uppercase;
+        color: var(--text-subtle);
+        margin: 18px 0 8px;
+        letter-spacing: 0.6px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .field {
+        background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0));
+        border:1px solid var(--border);
+        border-radius: var(--radius-md);
+        padding: 14px 16px;
+        margin-bottom: 12px;
+        box-shadow: var(--shadow-soft);
+        transition: transform 180ms ease, box-shadow 180ms ease;
+      }
+      .field:hover { transform: translateY(-2px); box-shadow: 0 18px 38px rgba(0,0,0,0.32); }
+      .field strong {
+        display: block;
+        font-size: 11px;
+        color: #a6b1c4;
+        margin-bottom: 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.45px;
+      }
+      .field a { color: #a5c7ff; text-decoration: none; font-weight: 650; }
+      .field a:hover { text-decoration: underline; }
+      .meta {
+        font-size: 12px;
+        color: var(--text-subtle);
+        margin-top: 12px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .cta {
+        margin-top: 18px;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 18px;
+        background: linear-gradient(135deg, var(--secondary), var(--primary));
+        color: #0b1220;
+        font-weight: 800;
+        text-decoration: none;
+        border-radius: 12px;
+        box-shadow: 0 14px 32px rgba(34,211,238,0.25);
+        transition: transform 180ms ease, box-shadow 180ms ease;
+      }
+      .cta:hover { transform: translateY(-2px); box-shadow: 0 18px 40px rgba(59,130,246,0.32); color:#0b1220; }
+      .pill-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(255,255,255,0.04);
+        border:1px solid var(--border);
+        color: #e5e7eb;
+        padding: 8px 12px;
+        border-radius: 999px;
+        font-size: 12px;
+        box-shadow: 0 10px 24px rgba(0,0,0,0.24);
+      }
+      .divider { height:1px; background:linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent); margin:18px 0 8px; }
+      .two-col {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 12px;
+      }
+      .icon {
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        height:26px;
+        width:26px;
+        border-radius:10px;
+        background:linear-gradient(135deg, rgba(255,255,255,0.25), rgba(255,255,255,0.08));
+        color:inherit;
+        position:relative;
+        isolation:isolate;
+        box-shadow:0 10px 24px rgba(0,0,0,0.24);
+      }
+      .icon::before {
+        content:"";
+        position:absolute;
+        inset:-2px;
+        border-radius:inherit;
+        background:linear-gradient(135deg, rgba(255,255,255,0.22), rgba(255,255,255,0));
+        z-index:-1;
+        opacity:0.8;
+      }
+      .icon-support::after { content:"\1F6E1"; font-size:14px; }
+      .icon-tag::after { content:"\1F3F7"; font-size:13px; }
+      .icon-summary::after { content:"\1F4DD"; font-size:14px; }
+      .icon-person::after { content:"\1F464"; font-size:14px; }
+      .icon-mail::after { content:"\2709"; font-size:13px; }
+      .icon-org::after { content:"\1F3E2"; font-size:13px; }
+      .icon-id::after { content:"#"; font-size:13px; font-weight:700; }
+      .icon-info::after { content:"\2139"; font-size:14px; }
+      .icon-ip::after { content:"\1F310"; font-size:13px; }
+      .icon-ua::after { content:"\1F4BE"; font-size:13px; }
+      .icon-clock::after { content:"\23F0"; font-size:13px; }
+      .icon-lock::after { content:"\1F512"; font-size:13px; }
+      .icon-flag::after { content:"\1F6A9"; font-size:13px; }
+      .icon-eyeoff::after { content:"\1F576"; font-size:13px; }
+      .icon-reply::after { content:"\21A9"; font-size:13px; }
+      @media (max-width:640px) {
+        .mail-card { padding:26px 22px; }
+        .heading { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+      <div class="mail-card">
+        <div class="accent-bar"></div>
+        <div class="heading">
+          <div>
+            <div class="title"><span class="icon icon-support" aria-hidden="true"></span> New Support Request</div>
+            <div class="subtitle">Clinker India platform</div>
+          </div>
+          <div class="badge"><span class="icon icon-tag" aria-hidden="true"></span> {{ categories.get(contact.category, contact.category|title) }}</div>
+        </div>
+
+        <div class="section-title"><span class="icon icon-summary" aria-hidden="true"></span> Summary</div>
+        <div class="field">
+          <strong>Subject</strong>
+          <div>{{ contact.subject }}</div>
+        </div>
+        <div class="field">
+          <strong>Message</strong>
+          <div>{{ contact.message | e | replace('\n','<br>') | safe }}</div>
+        </div>
+
+        <div class="section-title"><span class="icon icon-person" aria-hidden="true"></span> Requester</div>
+        <div class="two-col">
+          <div class="field">
+            <strong>Name</strong>
+            <div>{{ contact.full_name }}</div>
+          </div>
+          <div class="field">
+            <strong>Email</strong>
+            <div><a href="mailto:{{ contact.email }}">{{ contact.email }}</a></div>
+          </div>
+          {% if contact.organization_id %}
+          <div class="field">
+            <strong>Organization Id</strong>
+            <div>{{ contact.organization_id }}</div>
+          </div>
+          {% endif %}
+          {% if contact.user_id %}
+          <div class="field">
+            <strong>User Id</strong>
+            <div>{{ contact.user_id }}</div>
+          </div>
+          {% endif %}
+        </div>
+
+        <div class="section-title"><span class="icon icon-info" aria-hidden="true"></span> Meta</div>
+        <div class="two-col">
+          <div class="field">
+            <strong>Category</strong>
+            <div>{{ categories.get(contact.category, contact.category|title) }}</div>
+          </div>
+          <div class="field">
+            <strong>Request IP</strong>
+            <div>{{ contact.request_ip or 'Not captured' }}</div>
+          </div>
+          <div class="field">
+            <strong>User Agent</strong>
+            <div>{{ contact.user_agent or 'Not provided' }}</div>
+          </div>
+        </div>
+        <div class="meta"><span class="icon icon-clock" aria-hidden="true"></span> Created at {{ contact.created_at.strftime('%Y-%m-%d %H:%M:%S') if contact.created_at else 'now' }} UTC</div>
+
+        <div class="divider"></div>
+        <div class="pill-row">
+          <span class="pill"><span class="icon icon-lock" aria-hidden="true"></span> Internal only</span>
+          <span class="pill"><span class="icon icon-flag" aria-hidden="true"></span> Assign an owner</span>
+          <span class="pill"><span class="icon icon-eyeoff" aria-hidden="true"></span> Redact sensitive data</span>
+        </div>
+
+        <a href="mailto:{{ contact.email }}?subject=Re:%20{{ contact.subject | urlencode }}" class="cta">
+          <span class="icon icon-reply" aria-hidden="true"></span>
+          Reply to requester
+        </a>
+        <p class="meta">Please acknowledge and set an owner. Do not forward externally without redacting sensitive data.</p>
+      </div>
+    </div>
+  </body>
+</html>

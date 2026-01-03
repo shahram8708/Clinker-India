@@ -1,0 +1,197 @@
+:root {
+  --provision-accent: linear-gradient(135deg, rgba(124, 93, 255, 0.22), rgba(93, 214, 255, 0.18));
+}
+
+.auth-shell {
+  max-width: 1200px;
+}
+
+.provision-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 26px 24px;
+  background: linear-gradient(150deg, rgba(17, 24, 39, 0.92), rgba(12, 17, 26, 0.88));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+}
+
+.provision-hero__bg {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 20% 20%, rgba(124, 93, 255, 0.18), transparent 40%),
+    radial-gradient(circle at 80% 10%, rgba(93, 214, 255, 0.16), transparent 42%),
+    radial-gradient(circle at 50% 80%, rgba(45, 212, 191, 0.12), transparent 42%);
+  filter: blur(12px);
+  opacity: 0.9;
+}
+
+.provision-hero::after {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  pointer-events: none;
+}
+
+.provision-avatar {
+  width: 54px;
+  height: 54px;
+  border-radius: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--provision-accent);
+  color: #e9edff;
+  font-size: 1.3rem;
+  box-shadow: 0 10px 30px rgba(124, 93, 255, 0.25);
+}
+
+.pill-soft {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+}
+
+.checklist {
+  position: relative;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 12px 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.checklist::before {
+  content: "";
+  position: absolute;
+  left: 18px;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
+  background: var(--provision-accent);
+  border-radius: 999px;
+}
+
+.checklist-item {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  z-index: 1;
+}
+
+.check-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(124, 93, 255, 0.14);
+  color: #e7ecf5;
+  flex-shrink: 0;
+}
+
+.cta-card {
+  border-radius: 14px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: transform 0.18s ease, border-color 0.18s ease;
+}
+
+.cta-card:hover {
+  border-color: rgba(124, 93, 255, 0.4);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+}
+
+.cta-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: rgba(93, 214, 255, 0.14);
+  color: #d7f5ff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05rem;
+}
+
+.badge-soft {
+  padding: 6px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.submit-btn {
+  padding: 12px 14px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-label {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.btn-spinner {
+  display: none;
+}
+
+.submit-btn.loading .btn-spinner {
+  display: inline-block;
+}
+
+.submit-btn.loading .btn-label {
+  opacity: 0;
+  transform: translateY(-2px);
+}
+
+.submit-btn.loading,
+input[type="submit"].loading-input {
+  pointer-events: none;
+  opacity: 0.9;
+}
+
+input[type="submit"].loading-input {
+  position: relative;
+  color: transparent !important;
+}
+
+input[type="submit"].loading-input::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 1rem;
+  height: 1rem;
+  border: 0.18em solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 999px;
+  animation: spin-btn 0.8s linear infinite;
+}
+
+@keyframes spin-btn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 991.98px) {
+  .provision-hero {
+    padding: 22px 20px;
+  }
+}

@@ -1,0 +1,14 @@
+Flask
+Flask-Login
+Flask-WTF
+Flask-SQLAlchemy
+Flask-Mail
+Flask-Migrate
+python-dotenv
+email-validator
+reportlab
+numpy
+PuLP
+google-generativeai
+requests
+gunicorn

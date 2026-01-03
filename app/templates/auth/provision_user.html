@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}Add User | SaaS Starter{% endblock %}
+
+{% block head_extra %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/provision_user.css') }}">
+{% endblock %}
+
+{% block content %}
+<section class="auth-shell mx-auto">
+  <div class="row g-4 align-items-stretch justify-content-center">
+    <div class="col-xl-5 col-lg-6">
+      <div class="provision-hero shadow-soft h-100">
+        <div class="provision-hero__bg"></div>
+        <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+          <span class="eyebrow text-secondary small d-inline-flex align-items-center gap-2"><i class="bi bi-diagram-3 text-info"></i>Provisioning</span>
+          <span class="pill pill-soft d-inline-flex align-items-center gap-1"><i class="bi bi-shield-lock"></i><span>Owner/Admin</span></span>
+        </div>
+        <div class="d-flex flex-wrap align-items-center gap-3 mb-3">
+          <div class="provision-avatar"><i class="bi bi-person-plus-fill"></i></div>
+          <div class="flex-grow-1">
+            <p class="text-secondary small mb-1">Managed account</p>
+            <h1 class="h3 fw-semibold mb-1 text-body">Add a user to your org</h1>
+            <span class="chip chip-info d-inline-flex align-items-center"><i class="bi bi-link-45deg me-1"></i>Role-aware</span>
+          </div>
+        </div>
+        <p class="text-secondary mb-3">Create managed accounts with role and status presets. Share credentials securely post-create and keep the audit trail intact.</p>
+        <div class="d-flex flex-wrap gap-2 mb-3">
+          <span class="pill"><i class="bi bi-shield-shaded me-1"></i>Role gated</span>
+          <span class="pill"><i class="bi bi-hourglass-split me-1"></i>Pending safe</span>
+          <span class="pill"><i class="bi bi-activity me-1"></i>Audit trail</span>
+        </div>
+        <div class="checklist shadow-sm">
+          <div class="checklist-item">
+            <span class="check-icon"><i class="bi bi-1-circle"></i></span>
+            <div>
+              <div class="fw-semibold text-body">Add user details</div>
+              <div class="text-secondary xsmall">Name and email personalize notifications.</div>
+            </div>
+          </div>
+          <div class="checklist-item">
+            <span class="check-icon"><i class="bi bi-2-circle"></i></span>
+            <div>
+              <div class="fw-semibold text-body">Select role & status</div>
+              <div class="text-secondary xsmall">Use pending for inactive until activation.</div>
+            </div>
+          </div>
+          <div class="checklist-item">
+            <span class="check-icon"><i class="bi bi-3-circle"></i></span>
+            <div>
+              <div class="fw-semibold text-body">Set a temporary password</div>
+              <div class="text-secondary xsmall">Share securely; encourage reset at first login.</div>
+            </div>
+          </div>
+        </div>
+        <div class="cta-card mt-3 d-flex align-items-center gap-3">
+          <div class="cta-icon"><i class="bi bi-grid"></i></div>
+          <div class="flex-grow-1">
+            <div class="fw-semibold text-body">Back to dashboard</div>
+            <div class="text-secondary small">Review users, invites, and activity logs.</div>
+          </div>
+          <a class="btn btn-ghost btn-sm" href="{{ url_for('main.dashboard') }}" data-ripple><i class="bi bi-grid me-1"></i>Dashboard</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-xl-7 col-lg-6">
+      <div class="surface-card auth-card shadow-soft h-100 p-4 p-md-5">
+        <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-4">
+          <div>
+            <p class="eyebrow text-secondary small mb-1">User provisioning</p>
+            <h2 class="h4 fw-semibold text-body mb-1">Create a managed user</h2>
+            <p class="text-secondary small mb-0">Apply the right role, status, and temporary password for secure onboarding.</p>
+          </div>
+          <span class="badge-soft d-inline-flex align-items-center gap-1"><i class="bi bi-shield-check"></i><span>Protected</span></span>
+        </div>
+        <form method="POST" class="auth-form" novalidate>
+          {{ form.csrf_token(id="csrf_token_single") }}
+          <div class="input-block">
+            {{ form.full_name.label(class_="form-label text-secondary small fw-semibold") }}
+            <div class="input-icon">
+              <i class="bi bi-person"></i>
+              {{ form.full_name(class_="form-control input-premium", placeholder="Full name") }}
+            </div>
+          </div>
+          <div class="input-block">
+            {{ form.email.label(class_="form-label text-secondary small fw-semibold") }}
+            <div class="input-icon">
+              <i class="bi bi-envelope"></i>
+              {{ form.email(class_="form-control input-premium", placeholder="teammate@company.com") }}
+            </div>
+          </div>
+          <div class="input-block">
+            {{ form.role.label(class_="form-label text-secondary small fw-semibold") }}
+            <div class="input-icon">
+              <i class="bi bi-shield-lock"></i>
+              {{ form.role(class_="form-select input-premium") }}
+            </div>
+          </div>
+          <div class="input-block">
+            {{ form.status.label(class_="form-label text-secondary small fw-semibold") }}
+            <div class="input-icon">
+              <i class="bi bi-toggle2-on"></i>
+              {{ form.status(class_="form-select input-premium") }}
+            </div>
+            <div class="form-text text-secondary">Pending keeps the account inactive until activation.</div>
+          </div>
+          <div class="input-block">
+            {{ form.password.label(class_="form-label text-secondary small fw-semibold") }}
+            <div class="input-icon">
+              <i class="bi bi-lock"></i>
+              {{ form.password(class_="form-control input-premium", placeholder="Temporary password (8+ chars)") }}
+            </div>
+          </div>
+          <div class="input-block">
+            {{ form.confirm_password.label(class_="form-label text-secondary small fw-semibold") }}
+            <div class="input-icon">
+              <i class="bi bi-check2-circle"></i>
+              {{ form.confirm_password(class_="form-control input-premium", placeholder="Re-type password") }}
+            </div>
+          </div>
+          <div class="d-grid mb-2">
+            <button type="submit" name="{{ form.submit.name }}" id="{{ form.submit.id }}" value="{{ form.submit.data or form.submit.label.text or 'Submit' }}" class="btn btn-gradient submit-btn" data-ripple data-loading-text="Creating...">
+              <span class="btn-spinner spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+              <span class="btn-label">Create user</span>
+            </button>
+          </div>
+        </form>
+
+        <div class="divider text-center text-secondary small my-4">or bulk upload</div>
+
+        <form method="POST" class="auth-form" enctype="multipart/form-data" novalidate>
+          {{ bulk_form.csrf_token(id="csrf_token_bulk") }}
+          <div class="input-block">
+            {{ bulk_form.csv_file.label(class_="form-label text-secondary small fw-semibold") }}
+            <div class="input-icon">
+              <i class="bi bi-upload"></i>
+              {{ bulk_form.csv_file(class_="form-control input-premium", accept=".csv") }}
+            </div>
+            <div class="text-secondary xsmall">CSV columns: full_name, email, role, status (active/disabled/pending), password (8+ chars).</div>
+          </div>
+          <div class="d-flex flex-wrap gap-2 align-items-center">
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('auth.provision_sample_csv') }}" download data-ripple><i class="bi bi-download me-1"></i>Download sample CSV</a>
+            <button type="submit" name="{{ bulk_form.submit_bulk.name }}" id="{{ bulk_form.submit_bulk.id }}" value="{{ bulk_form.submit_bulk.data or bulk_form.submit_bulk.label.text or 'Submit' }}" class="btn btn-gradient btn-sm submit-btn" data-ripple data-loading-text="Uploading...">
+              <span class="btn-spinner spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+              <span class="btn-label">Upload &amp; create users</span>
+            </button>
+          </div>
+        </form>
+        <p class="mt-3 mb-0 text-secondary small"><a href="{{ url_for('main.dashboard') }}">Back to dashboard</a></p>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/button_spinner.js') }}"></script>
+{% endblock %}

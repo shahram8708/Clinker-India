@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% block title %}Activity Logs | Clinker Ops{% endblock %}
+{% block content %}
+<div class="page-hero shadow-soft mb-4 page-hero--glow">
+  <div class="page-hero__bg"></div>
+  <div class="hero-grid-lines"></div>
+  <div class="d-flex flex-column flex-xl-row align-items-start gap-3">
+    <div class="flex-grow-1">
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+        <span class="hero-chip hero-chip-accent"><i class="bi bi-shield-lock"></i><span>Governance</span></span>
+        <span class="chip chip-soft"><i class="bi bi-broadcast-pin me-1"></i>Live feed</span>
+        <span class="pill pill-outline"><i class="bi bi-radar"></i>Traceable changes</span>
+      </div>
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+        <h1 class="display-6 fw-semibold mb-0 text-body">Activity & Audit Trail</h1>
+        <span class="pill pill-ghost"><i class="bi bi-compass"></i>User-friendly</span>
+      </div>
+      <p class="text-secondary mb-3">Tenant-scoped actions with search, filters, severity badges, and clear user attribution.</p>
+      <div class="d-flex flex-wrap gap-2">
+        <span class="pill">Search & filter</span>
+        <span class="pill">Severity-aware</span>
+        <span class="pill">User attribution</span>
+        <span class="pill">Audit friendly</span>
+      </div>
+    </div>
+    <div class="hero-mini-grid ms-xl-auto">
+      <div class="mini-card">
+        <div class="mini-icon mini-icon-green"><i class="bi bi-activity"></i></div>
+        <div>
+          <div class="text-secondary xsmall">Status</div>
+          <div class="fw-semibold text-body">Live monitoring</div>
+        </div>
+      </div>
+      <div class="mini-card">
+        <div class="mini-icon mini-icon-amber"><i class="bi bi-shield-check"></i></div>
+        <div>
+          <div class="text-secondary xsmall">Compliance</div>
+          <div class="fw-semibold text-body">Audit ready</div>
+        </div>
+      </div>
+      <a class="btn btn-gradient btn-sm align-self-start" href="{{ url_for('ops.network') }}" data-ripple><i class="bi bi-arrow-left-short me-2"></i>Back to network</a>
+    </div>
+  </div>
+</div>
+
+<div class="surface-card mb-4 filter-card">
+  <div class="d-flex align-items-start justify-content-between flex-wrap gap-2 mb-3">
+    <div class="d-flex align-items-start gap-2">
+      <div class="icon-chip icon-chip-info"><i class="bi bi-funnel-fill"></i></div>
+      <div>
+        <p class="eyebrow text-uppercase small text-secondary mb-1">Filters</p>
+        <h2 class="section-title h5 mb-1 text-body">Refine and trace actions</h2>
+        <p class="text-secondary small mb-0">Combine time, user, and severity filters to zoom into specific events.</p>
+      </div>
+    </div>
+    <div class="d-flex align-items-center gap-2 flex-wrap filter-hint">
+      <span class="chip chip-soft"><i class="bi bi-clock-history me-1"></i>Time</span>
+      <span class="chip chip-soft"><i class="bi bi-person-lines-fill me-1"></i>User</span>
+      <span class="chip chip-soft"><i class="bi bi-activity me-1"></i>Severity</span>
+    </div>
+  </div>
+  <form class="filter-grid" method="GET">
+    {{ form.csrf_token }}
+    <div class="input-block">
+      {{ form.action_type.label(class_='form-label text-secondary small fw-semibold') }}
+      <div class="input-icon">
+        <i class="bi bi-lightning-charge"></i>
+        {{ form.action_type(class_='form-select form-select-sm input-premium') }}
+      </div>
+    </div>
+    <div class="input-block">
+      {{ form.entity_type.label(class_='form-label text-secondary small fw-semibold') }}
+      <div class="input-icon">
+        <i class="bi bi-box-seam"></i>
+        {{ form.entity_type(class_='form-select form-select-sm input-premium') }}
+      </div>
+    </div>
+    <div class="input-block">
+      {{ form.severity.label(class_='form-label text-secondary small fw-semibold') }}
+      <div class="input-icon">
+        <i class="bi bi-activity"></i>
+        {{ form.severity(class_='form-select form-select-sm input-premium') }}
+      </div>
+    </div>
+    <div class="input-block">
+      {{ form.user_id.label(class_='form-label text-secondary small fw-semibold') }}
+      <div class="input-icon">
+        <i class="bi bi-person-badge"></i>
+        {{ form.user_id(class_='form-control form-control-sm input-premium', placeholder='User ID') }}
+      </div>
+    </div>
+    <div class="input-block">
+      {{ form.start_date.label(class_='form-label text-secondary small fw-semibold') }}
+      <div class="input-icon">
+        <i class="bi bi-calendar-event"></i>
+        {{ form.start_date(class_='form-control form-control-sm input-premium') }}
+      </div>
+    </div>
+    <div class="input-block">
+      {{ form.end_date.label(class_='form-label text-secondary small fw-semibold') }}
+      <div class="input-icon">
+        <i class="bi bi-calendar-check"></i>
+        {{ form.end_date(class_='form-control form-control-sm input-premium') }}
+      </div>
+    </div>
+    <div class="input-block input-wide">
+      {{ form.search.label(class_='form-label text-secondary small fw-semibold') }}
+      <div class="input-icon">
+        <i class="bi bi-search"></i>
+        {{ form.search(class_='form-control form-control-sm input-premium', placeholder='Search description or details') }}
+      </div>
+    </div>
+    <div class="input-block d-flex align-items-end gap-2">
+      {{ form.submit(class_='btn btn-gradient btn-sm w-100', **{'data-loading-text': 'Applying...'}) }}
+      <a class="btn btn-ghost btn-sm w-100" href="{{ url_for('ops.activity_log') }}" data-ripple><i class="bi bi-arrow-counterclockwise me-1"></i>Reset</a>
+    </div>
+  </form>
+</div>
+
+<div class="surface-card">
+  <div class="d-flex align-items-start justify-content-between flex-wrap gap-2 mb-3">
+    <div class="d-flex align-items-start gap-2">
+      <div class="icon-chip icon-chip-purple"><i class="bi bi-activity"></i></div>
+      <div>
+        <p class="eyebrow text-uppercase small text-secondary mb-1">Timeline</p>
+        <h2 class="section-title h5 mb-1 text-body">Recent activity</h2>
+        <p class="text-secondary small mb-0">Severity cues, user attribution, and time-stamped actions stay neatly aligned.</p>
+      </div>
+    </div>
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      <span class="chip chip-critical"><i class="bi bi-x-octagon me-1"></i>Critical</span>
+      <span class="chip chip-warning"><i class="bi bi-exclamation-triangle me-1"></i>Warning</span>
+      <span class="chip chip-info"><i class="bi bi-activity me-1"></i>Info</span>
+    </div>
+  </div>
+
+  {% if logs.items %}
+    <div class="timeline-premium timeline-premium--accent">
+      {% for entry in logs.items %}
+        {% set severity = entry.severity or 'info' %}
+        {% set severity_class = 'critical' if severity=='critical' else ('warning' if severity=='warning' else 'info') %}
+        <div class="timeline-item-luxe">
+          <div class="timeline-pin {{ 'pin-critical' if severity_class=='critical' else ('pin-warning' if severity_class=='warning' else 'pin-info') }}">
+            <i class="bi {{ 'bi-x-octagon' if severity_class=='critical' else ('bi-exclamation-triangle' if severity_class=='warning' else 'bi-activity') }}"></i>
+          </div>
+          <div class="timeline-body timeline-body--elevated">
+            <div class="d-flex align-items-start justify-content-between gap-3">
+              <div class="flex-grow-1">
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                  <span class="chip chip-{{ severity_class }}">{{ severity|capitalize }}</span>
+                  <span class="text-secondary xsmall">{{ entry.action_type }} · {{ entry.entity_type or 'general' }}{% if entry.entity_id %} #{{ entry.entity_id }}{% endif %}</span>
+                </div>
+                <div class="fw-semibold text-body mb-1">{{ entry.action_description }}</div>
+                {% if entry.details %}
+                  <div class="meta-grid">
+                    {% for key, value in entry.details.items() %}
+                      <span class="badge-soft">{{ key }}: {{ value }}</span>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </div>
+              <div class="text-end">
+                <span class="badge-soft badge-time">{{ entry.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <nav aria-label="Activity pagination" class="mt-3">
+      <ul class="pagination pagination-sm pagination-premium mb-0">
+        {# drop existing page param to avoid duplicates when building pagination links #}
+        {% set _args = request.args.to_dict() %}
+        {% set _ = _args.pop('page', None) %}
+        {% if logs.has_prev %}
+          <li class="page-item"><a class="page-link" href="{{ url_for('ops.activity_log', page=logs.prev_num, **_args) }}">Previous</a></li>
+        {% endif %}
+        <li class="page-item disabled"><span class="page-link">Page {{ logs.page }} of {{ logs.pages }}</span></li>
+        {% if logs.has_next %}
+          <li class="page-item"><a class="page-link" href="{{ url_for('ops.activity_log', page=logs.next_num, **_args) }}">Next</a></li>
+        {% endif %}
+      </ul>
+    </nav>
+  {% else %}
+    <div class="empty-state empty-state--centered">
+      <div class="empty-icon"><i class="bi bi-clipboard-check"></i></div>
+      <div>
+        <p class="fw-semibold text-body mb-1">No activity recorded yet</p>
+        <p class="text-secondary small mb-2">Actions and audit events will surface here once your team starts making changes.</p>
+        <div class="d-flex flex-wrap gap-2">
+          <a class="btn btn-gradient btn-sm" href="{{ url_for('ops.activity_log') }}" data-ripple><i class="bi bi-arrow-repeat me-1"></i>Refresh</a>
+          <a class="btn btn-ghost btn-sm" href="{{ url_for('ops.network') }}" data-ripple><i class="bi bi-arrow-left-short me-1"></i>Back to network</a>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Login | SaaS Starter{% endblock %}
+
+{% block head_extra %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/login.css') }}">
+{% endblock %}
+
+{% block content %}
+<section class="auth-shell mx-auto">
+  <div class="row g-4 align-items-stretch justify-content-center">
+    <div class="col-xl-5 col-lg-6">
+      <div class="login-hero shadow-soft h-100">
+        <div class="login-hero__bg"></div>
+        <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+          <span class="eyebrow text-secondary small d-inline-flex align-items-center gap-2"><i class="bi bi-hexagon text-info"></i>Welcome back</span>
+          <span class="pill pill-soft d-inline-flex align-items-center gap-1"><i class="bi bi-shield-check"></i><span>Secure</span></span>
+        </div>
+        <div class="d-flex flex-wrap align-items-center gap-3 mb-3">
+          <div class="login-avatar"><i class="bi bi-person-badge"></i></div>
+          <div class="flex-grow-1">
+            <p class="text-secondary small mb-1">Tenant sign-in</p>
+            <h1 class="h3 fw-semibold mb-1 text-body">Sign in to Clinker India</h1>
+            <span class="chip chip-info d-inline-flex align-items-center"><i class="bi bi-lock-fill me-1"></i>Audit-ready access</span>
+          </div>
+        </div>
+        <p class="text-secondary mb-3">Tenant-scoped access with audit trails and role-aware navigation. Your session remains least-privilege by default.</p>
+        <div class="d-flex flex-wrap gap-2 mb-3">
+          <span class="pill"><i class="bi bi-cloud-check me-1"></i>SSO-ready</span>
+          <span class="pill"><i class="bi bi-activity me-1"></i>Audit logging</span>
+          <span class="pill"><i class="bi bi-shield-shaded me-1"></i>Least privilege</span>
+        </div>
+        <div class="checklist shadow-sm">
+          <div class="checklist-item">
+            <span class="check-icon"><i class="bi bi-1-circle"></i></span>
+            <div>
+              <div class="fw-semibold text-body">Use your work email</div>
+              <div class="text-secondary xsmall">Matches your tenant identity.</div>
+            </div>
+          </div>
+          <div class="checklist-item">
+            <span class="check-icon"><i class="bi bi-2-circle"></i></span>
+            <div>
+              <div class="fw-semibold text-body">Enter your password</div>
+              <div class="text-secondary xsmall">We never store plaintext credentials.</div>
+            </div>
+          </div>
+          <div class="checklist-item">
+            <span class="check-icon"><i class="bi bi-3-circle"></i></span>
+            <div>
+              <div class="fw-semibold text-body">Stay signed in (optional)</div>
+              <div class="text-secondary xsmall">Remember this device for quicker access.</div>
+            </div>
+          </div>
+        </div>
+        <div class="cta-card mt-3 d-flex align-items-center gap-3">
+          <div class="cta-icon"><i class="bi bi-question-circle"></i></div>
+          <div class="flex-grow-1">
+            <div class="fw-semibold text-body">Forgot password?</div>
+            <div class="text-secondary small">Recover securely with a tenant-scoped reset link.</div>
+          </div>
+          <a class="btn btn-ghost btn-sm" href="{{ url_for('auth.forgot_password') }}" data-ripple><i class="bi bi-shield-lock me-1"></i>Reset</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-xl-7 col-lg-6">
+      <div class="surface-card auth-card shadow-soft h-100 p-4 p-md-5">
+        <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-4">
+          <div>
+            <p class="eyebrow text-secondary small mb-1">Sign in</p>
+            <h2 class="h4 fw-semibold text-body mb-1">Access your workspace</h2>
+            <p class="text-secondary small mb-0">We’ll verify your credentials and keep your session audited.</p>
+          </div>
+          <span class="badge-soft d-inline-flex align-items-center gap-1"><i class="bi bi-shield-check"></i><span>Protected</span></span>
+        </div>
+        <form method="POST" class="auth-form" novalidate>
+          {{ form.hidden_tag() }}
+          <div class="input-block">
+            {{ form.email.label(class_="form-label text-secondary small fw-semibold") }}
+            <div class="input-icon">
+              <i class="bi bi-envelope"></i>
+              {{ form.email(class_="form-control input-premium", placeholder="you@company.com") }}
+            </div>
+          </div>
+          <div class="input-block">
+            {{ form.password.label(class_="form-label text-secondary small fw-semibold") }}
+            <div class="input-icon">
+              <i class="bi bi-lock"></i>
+              {{ form.password(class_="form-control input-premium", placeholder="Your password") }}
+            </div>
+          </div>
+          <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+            <div class="form-check mb-0">
+              {{ form.remember_me(class_="form-check-input") }}
+              {{ form.remember_me.label(class_="form-check-label text-secondary") }}
+            </div>
+            <a class="small text-secondary" href="{{ url_for('auth.forgot_password') }}">Forgot password?</a>
+          </div>
+          <div class="d-grid mb-2">
+            <button type="submit" name="{{ form.submit.name }}" id="{{ form.submit.id }}" value="{{ form.submit.data or form.submit.label.text or 'Submit' }}" class="btn btn-gradient submit-btn" data-ripple data-loading-text="Signing in...">
+              <span class="btn-spinner spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+              <span class="btn-label">Sign in</span>
+            </button>
+          </div>
+        </form>
+        <p class="mt-3 mb-0 text-secondary small">Need an account? <a href="{{ url_for('auth.register') }}">Create one</a>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/button_spinner.js') }}"></script>
+{% endblock %}

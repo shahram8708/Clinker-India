@@ -1,0 +1,125 @@
+{% set endpoint = request.endpoint or '' %}
+<div class="sidebar d-flex flex-column h-100 shadow-soft">
+  <div class="sidebar-header d-flex align-items-start justify-content-between gap-2">
+    <div>
+      <p class="text-uppercase text-secondary small mb-1">Navigation</p>
+      <p class="fw-semibold text-white-50 mb-0 d-flex align-items-center gap-2">
+        <i class="bi bi-compass"></i>
+        Tenant aware
+      </p>
+    </div>
+    <span class="badge text-bg-success bg-opacity-25 border border-success border-opacity-25">Live</span>
+  </div>
+
+  <div class="sidebar-nav flex-grow-1">
+    <p class="sidebar-section">Overview</p>
+    <a class="sidebar-link {{ 'active' if endpoint.startswith('main.dashboard') else '' }}" href="{{ url_for('main.dashboard') }}">
+      <span class="nav-indicator"></span>
+      <i class="bi bi-grid"></i>
+      <span>Dashboard</span>
+    </a>
+    <a class="sidebar-link {{ 'active' if endpoint.startswith('main.analytics') else '' }}" href="{{ url_for('main.analytics') }}">
+      <span class="nav-indicator"></span>
+      <i class="bi bi-graph-up-arrow"></i>
+      <span>Analytics & Insights</span>
+    </a>
+    {% if current_user.is_authenticated and current_user.is_org_admin %}
+      <p class="sidebar-section mt-3">Administration</p>
+      <a class="sidebar-link {{ 'active' if 'tenant.user_management' == endpoint else '' }}" href="{{ url_for('tenant.user_management') }}">
+        <span class="nav-indicator"></span>
+        <i class="bi bi-people"></i>
+        <span>Organization Management</span>
+      </a>
+      <a class="sidebar-link {{ 'active' if endpoint == 'billing.upgrade_page' else '' }}" href="{{ url_for('billing.upgrade_page') }}">
+        <span class="nav-indicator"></span>
+        <i class="bi bi-credit-card"></i>
+        <span>Billing & Seats</span>
+      </a>
+    {% endif %}
+
+    <p class="sidebar-section mt-3">Operations</p>
+    <a class="sidebar-link {{ 'active' if endpoint.startswith('ops.network') else '' }}" href="{{ url_for('ops.network') }}">
+      <span class="nav-indicator"></span>
+      <i class="bi bi-diagram-3"></i>
+      <span>Network Control</span>
+    </a>
+    <a class="sidebar-link" href="{{ url_for('ops.network') }}#plants">
+      <span class="nav-indicator"></span>
+      <i class="bi bi-building"></i>
+      <span>Plants</span>
+    </a>
+    <a class="sidebar-link" href="{{ url_for('ops.network') }}#routes">
+      <span class="nav-indicator"></span>
+      <i class="bi bi-truck"></i>
+      <span>Transport</span>
+    </a>
+    <a class="sidebar-link" href="{{ url_for('ops.network') }}#inventory">
+      <span class="nav-indicator"></span>
+      <i class="bi bi-box-seam"></i>
+      <span>Inventory</span>
+    </a>
+    <a class="sidebar-link" href="{{ url_for('ops.network') }}#scenarios">
+      <span class="nav-indicator"></span>
+      <i class="bi bi-bar-chart"></i>
+      <span>Scenarios / Planning</span>
+    </a>
+    <a class="sidebar-link" href="{{ url_for('ops.network') }}#optimization">
+      <span class="nav-indicator"></span>
+      <i class="bi bi-cpu"></i>
+      <span>Optimization Jobs</span>
+    </a>
+    <a class="sidebar-link" href="{{ url_for('ops.network') }}#reports">
+      <span class="nav-indicator"></span>
+      <i class="bi bi-file-earmark-arrow-down"></i>
+      <span>Reports / Exports</span>
+    </a>
+
+    <p class="sidebar-section mt-3">Governance</p>
+    <a class="sidebar-link {{ 'active' if endpoint.startswith('ops.activity_log') else '' }}" href="{{ url_for('ops.activity_log') }}">
+      <span class="nav-indicator"></span>
+      <i class="bi bi-shield-check"></i>
+      <span>Activity Log</span>
+    </a>
+
+    {% if current_user.is_authenticated and current_user.is_super_admin %}
+      <p class="sidebar-section mt-3">Super Admin</p>
+      <a class="sidebar-link {{ 'active' if endpoint == 'superadmin.dashboard' else '' }}" href="{{ url_for('superadmin.dashboard') }}">
+        <span class="nav-indicator"></span>
+        <i class="bi bi-stars"></i>
+        <span>Platform Dashboard</span>
+      </a>
+    {% endif %}
+  </div>
+
+   <div class="sidebar-nav flex-grow-1">
+    <p class="sidebar-section">Company</p>
+    
+    <a class="sidebar-link {{ 'active' if endpoint == 'main.contact_support' else '' }}" href="{{ url_for('main.contact_support') }}">
+      <span class="nav-indicator"></span>
+      <i class="bi bi-life-preserver"></i>
+      <span>Support</span>
+    </a>
+    <a class="sidebar-link {{ 'active' if endpoint == 'main.about' else '' }}" href="{{ url_for('main.about') }}">
+      <span class="nav-indicator"></span>
+      <i class="bi bi-info-circle"></i>
+      <span>About</span>
+    </a>
+    <a class="sidebar-link {{ 'active' if endpoint == 'main.privacy' else '' }}" href="{{ url_for('main.privacy') }}">
+      <span class="nav-indicator"></span>
+      <i class="bi bi-shield-lock"></i>
+      <span>Privacy</span>
+    </a>
+    <a class="sidebar-link {{ 'active' if endpoint == 'main.terms' else '' }}" href="{{ url_for('main.terms') }}">
+      <span class="nav-indicator"></span>
+      <i class="bi bi-journal-text"></i>
+      <span>Terms</span>
+    </a>
+  </div>
+
+  <div class="sidebar-footer text-secondary small">
+    <div class="d-flex align-items-center gap-2">
+      <span class="status-dot bg-success"></span>
+      <span>Context locked to organization</span>
+    </div>
+  </div>
+</div>

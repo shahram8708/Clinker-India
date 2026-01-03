@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Access Denied{% endblock %}
+{% block content %}
+<section class="py-5">
+  <div class="container">
+    <div class="row justify-content-center">
+      <div class="col-xl-8">
+        <div class="error-card premium-card p-4 p-md-5 position-relative overflow-hidden">
+          <div class="error-glow"></div>
+
+          <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <span class="badge-soft badge-time"><i class="bi bi-shield-exclamation"></i> 403 Access Denied</span>
+              <span class="badge-soft"><i class="bi bi-building-lock"></i> Restricted resource</span>
+            </div>
+            <span class="pill-soft pill-muted"><i class="bi bi-diagram-3"></i> Tenant validation required</span>
+          </div>
+
+          <div class="text-center mb-4">
+            <div class="icon-stack-lg gradient-amber mb-3"><i class="bi bi-shield-exclamation"></i></div>
+            <h1 class="fw-bold h2 text-white mb-2">Access blocked</h1>
+            <p class="text-secondary lead mb-3">You do not have permission to view this resource or your tenant context failed validation.</p>
+            <div class="d-flex justify-content-center flex-wrap gap-2">
+              <a class="btn btn-outline-light btn-lg" href="{{ url_for('main.dashboard') }}" data-ripple>
+                <span class="btn-label"><i class="bi bi-house-door me-2"></i>Back to dashboard</span>
+              </a>
+              <a class="btn btn-gradient btn-lg" href="{{ url_for('auth.login') }}" data-ripple>
+                <span class="btn-label"><i class="bi bi-arrow-repeat me-2"></i>Re-authenticate</span>
+              </a>
+            </div>
+          </div>
+
+          <div class="row g-3">
+            <div class="col-md-6">
+              <div class="action-panel h-100">
+                <div class="d-flex align-items-center gap-2 mb-2">
+                  <div class="icon-chip"><i class="bi bi-patch-check"></i></div>
+                  <span class="fw-semibold">What happened</span>
+                </div>
+                <ul class="error-checklist">
+                  <li><i class="bi bi-check-circle"></i><span>Role or permissions do not match this area</span></li>
+                  <li><i class="bi bi-check-circle"></i><span>Tenant or workspace context might be missing</span></li>
+                  <li><i class="bi bi-check-circle"></i><span>Recent changes may require re-authentication</span></li>
+                </ul>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="action-panel h-100">
+                <div class="d-flex align-items-center gap-2 mb-2">
+                  <div class="icon-chip success"><i class="bi bi-journal-check"></i></div>
+                  <span class="fw-semibold">How to proceed</span>
+                </div>
+                <div class="d-flex flex-column gap-2 text-secondary">
+                  <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-people text-info"></i>
+                    <span>Switch to a permitted workspace or tenant</span>
+                  </div>
+                  <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-lock text-warning"></i>
+                    <span>Ask an admin to adjust your access level</span>
+                  </div>
+                  <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-chat-dots text-success"></i>
+                    <span>If this seems wrong, re-authenticate to refresh</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script src="{{ url_for('static', filename='js/button_spinner.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Accept Invitation | SaaS Starter{% endblock %}
+
+{% block head_extra %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/accept_invite.css') }}">
+{% endblock %}
+
+{% block content %}
+<section class="auth-shell mx-auto">
+  <div class="row g-4 align-items-stretch justify-content-center">
+    <div class="col-xl-5 col-lg-6">
+      <div class="invite-hero shadow-soft h-100">
+        <div class="invite-hero__bg"></div>
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+          <span class="eyebrow text-secondary small d-inline-flex align-items-center gap-2"><i class="bi bi-envelope-open-heart text-info"></i>Invitation</span>
+          <span class="pill pill-soft d-inline-flex align-items-center gap-1"><i class="bi bi-clock-history"></i><span>One-time access</span></span>
+        </div>
+        <div class="d-flex flex-wrap align-items-center gap-3 mb-3">
+          <div class="invite-avatar">
+            <i class="bi bi-buildings"></i>
+          </div>
+          <div class="flex-grow-1">
+            <p class="text-secondary small mb-1">You were invited to</p>
+            <h1 class="h3 fw-semibold mb-1 text-body">{{ invitation.organization.name }}</h1>
+            <span class="chip chip-info d-inline-flex align-items-center"><i class="bi bi-shield-check me-1"></i>{{ invitation.role|capitalize }} role</span>
+          </div>
+        </div>
+        <p class="text-secondary mb-3">Set your details to activate the account and start with tenant-scoped access.</p>
+        <div class="d-flex flex-wrap gap-2 mb-3">
+          <span class="pill"><i class="bi bi-shield-lock me-1"></i>Secure link</span>
+          <span class="pill"><i class="bi bi-person-badge me-1"></i>Role-aware</span>
+          <span class="pill"><i class="bi bi-lightning-charge me-1"></i>Fast setup</span>
+        </div>
+        <div class="checklist shadow-sm">
+          <div class="checklist-item">
+            <span class="check-icon"><i class="bi bi-1-circle"></i></span>
+            <div>
+              <div class="fw-semibold text-body">Confirm your details</div>
+              <div class="text-secondary xsmall">Use the name you want teammates to see.</div>
+            </div>
+          </div>
+          <div class="checklist-item">
+            <span class="check-icon"><i class="bi bi-2-circle"></i></span>
+            <div>
+              <div class="fw-semibold text-body">Create a strong password</div>
+              <div class="text-secondary xsmall">8+ characters with a mix for better safety.</div>
+            </div>
+          </div>
+          <div class="checklist-item">
+            <span class="check-icon"><i class="bi bi-3-circle"></i></span>
+            <div>
+              <div class="fw-semibold text-body">Unlock tenant dashboard</div>
+              <div class="text-secondary xsmall">You will land in your {{ invitation.role|capitalize }} workspace.</div>
+            </div>
+          </div>
+        </div>
+        <div class="cta-card mt-3 d-flex align-items-center gap-3">
+          <div class="cta-icon"><i class="bi bi-lock-fill"></i></div>
+          <div class="flex-grow-1">
+            <div class="fw-semibold text-body">Already active?</div>
+            <div class="text-secondary small">Use your credentials to sign in directly.</div>
+          </div>
+          <a class="btn btn-ghost btn-sm" href="{{ url_for('auth.login') }}" data-ripple><i class="bi bi-door-open me-1"></i>Sign in</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-xl-7 col-lg-6">
+      <div class="surface-card auth-card shadow-soft h-100 p-4 p-md-5">
+        <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-4">
+          <div>
+            <p class="eyebrow text-secondary small mb-1">Accept invite</p>
+            <h2 class="h4 fw-semibold text-body mb-1">Complete your profile</h2>
+            <p class="text-secondary small mb-0">We will activate your secure tenant access in a few seconds.</p>
+          </div>
+          <span class="badge-soft d-inline-flex align-items-center gap-1"><i class="bi bi-shield-check"></i><span>Protected</span></span>
+        </div>
+        <form method="POST" class="auth-form row g-3" novalidate>
+          {{ form.hidden_tag() }}
+          <div class="col-12">
+            <div class="input-block">
+              {{ form.full_name.label(class_="form-label text-secondary small fw-semibold") }}
+              <div class="input-icon">
+                <i class="bi bi-person"></i>
+                {{ form.full_name(class_="form-control input-premium", placeholder="Full name") }}
+              </div>
+              <div class="text-secondary xsmall">Shown to your team across the workspace.</div>
+            </div>
+          </div>
+          <div class="col-12 col-md-6">
+            <div class="input-block">
+              {{ form.password.label(class_="form-label text-secondary small fw-semibold") }}
+              <div class="input-icon">
+                <i class="bi bi-lock"></i>
+                {{ form.password(class_="form-control input-premium", placeholder="Create a password (8+ chars)") }}
+              </div>
+              <div class="text-secondary xsmall">Avoid reuse of personal passwords.</div>
+            </div>
+          </div>
+          <div class="col-12 col-md-6">
+            <div class="input-block">
+              {{ form.confirm_password.label(class_="form-label text-secondary small fw-semibold") }}
+              <div class="input-icon">
+                <i class="bi bi-check2-circle"></i>
+                {{ form.confirm_password(class_="form-control input-premium", placeholder="Re-type password") }}
+              </div>
+              <div class="text-secondary xsmall">Double-check to avoid typos.</div>
+            </div>
+          </div>
+          <div class="col-12">
+            <div class="d-grid">
+              <button type="submit" name="{{ form.submit.name }}" id="{{ form.submit.id }}" value="{{ form.submit.data or form.submit.label.text or 'Submit' }}" class="btn btn-gradient submit-btn" data-ripple data-loading-text="Activating...">
+                <span class="btn-spinner spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+                <span class="btn-label">Activate &amp; Join</span>
+              </button>
+            </div>
+          </div>
+        </form>
+        <div class="mt-3 d-flex align-items-center gap-2 text-secondary small flex-wrap">
+          <i class="bi bi-shield-lock"></i>
+          <span>By continuing you agree to our security-first onboarding for tenant access.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/button_spinner.js') }}"></script>
+{% endblock %}

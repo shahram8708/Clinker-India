@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}Onboarding | SaaS Starter{% endblock %}
+
+{% block head_extra %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/onboarding.css') }}">
+{% endblock %}
+
+{% block content %}
+<section class="auth-shell mx-auto">
+  <div class="row g-4 align-items-stretch justify-content-center">
+    <div class="col-xl-5 col-lg-6">
+      <div class="onboarding-hero shadow-soft h-100">
+        <div class="onboarding-hero__bg"></div>
+        <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+          <span class="eyebrow text-secondary small d-inline-flex align-items-center gap-2"><i class="bi bi-flag text-info"></i>Step 1</span>
+          <span class="pill pill-soft d-inline-flex align-items-center gap-1"><i class="bi bi-rocket-takeoff"></i><span>Onboarding</span></span>
+        </div>
+        <div class="d-flex flex-wrap align-items-center gap-3 mb-3">
+          <div class="onboarding-avatar"><i class="bi bi-building-gear"></i></div>
+          <div class="flex-grow-1">
+            <p class="text-secondary small mb-1">Organization profile</p>
+            <h1 class="h3 fw-semibold mb-1 text-body">Welcome, {{ current_user.full_name or current_user.email }}</h1>
+            <span class="chip chip-info d-inline-flex align-items-center"><i class="bi bi-shield-check me-1"></i>Tenant guardrails</span>
+          </div>
+        </div>
+        <p class="text-secondary mb-3">Confirm your organization profile to finish setup, align timezones, and enable tenant guardrails for safer collaboration.</p>
+        <div class="d-flex flex-wrap gap-2 mb-3">
+          <span class="pill"><i class="bi bi-building me-1"></i>Org basics</span>
+          <span class="pill"><i class="bi bi-clock-history me-1"></i>Timezone</span>
+          <span class="pill"><i class="bi bi-people me-1"></i>Size</span>
+        </div>
+        <div class="checklist shadow-sm">
+          <div class="checklist-item">
+            <span class="check-icon"><i class="bi bi-1-circle"></i></span>
+            <div>
+              <div class="fw-semibold text-body">Set org basics</div>
+              <div class="text-secondary xsmall">Name, industry, and timezone keep data aligned.</div>
+            </div>
+          </div>
+          <div class="checklist-item">
+            <span class="check-icon"><i class="bi bi-2-circle"></i></span>
+            <div>
+              <div class="fw-semibold text-body">Save the profile</div>
+              <div class="text-secondary xsmall">We apply guardrails for your tenant.</div>
+            </div>
+          </div>
+          <div class="checklist-item">
+            <span class="check-icon"><i class="bi bi-3-circle"></i></span>
+            <div>
+              <div class="fw-semibold text-body">Invite your team</div>
+              <div class="text-secondary xsmall">Next, add members with the right roles.</div>
+            </div>
+          </div>
+        </div>
+        <div class="cta-card mt-3 d-flex align-items-center gap-3">
+          <div class="cta-icon"><i class="bi bi-people"></i></div>
+          <div class="flex-grow-1">
+            <div class="fw-semibold text-body">Need to add teammates?</div>
+            <div class="text-secondary small">Finish this step to enable invites and roles.</div>
+          </div>
+          <span class="badge-soft">Next: Invite</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-xl-7 col-lg-6">
+      <div class="surface-card auth-card shadow-soft h-100 p-4 p-md-5">
+        <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-4">
+          <div>
+            <p class="eyebrow text-secondary small mb-1">Organization profile</p>
+            <h2 class="h4 fw-semibold text-body mb-1">Confirm your details</h2>
+            <p class="text-secondary small mb-0">This keeps your tenant scoped correctly and improves audit clarity.</p>
+          </div>
+          <span class="badge-soft d-inline-flex align-items-center gap-1"><i class="bi bi-shield-check"></i><span>Protected</span></span>
+        </div>
+        <form method="POST" class="row g-3 auth-form" novalidate>
+          {{ form.hidden_tag() }}
+          <div class="col-12">
+            <div class="input-block">
+              {{ form.organization_name.label(class_="form-label text-secondary small fw-semibold") }}
+              <div class="input-icon">
+                <i class="bi bi-building"></i>
+                {{ form.organization_name(class_="form-control input-premium", placeholder="Acme Manufacturing") }}
+              </div>
+            </div>
+          </div>
+          <div class="col-12 col-md-6">
+            <div class="input-block">
+              {{ form.industry.label(class_="form-label text-secondary small fw-semibold") }}
+              <div class="input-icon">
+                <i class="bi bi-briefcase"></i>
+                {{ form.industry(class_="form-control input-premium", placeholder="Pharma, Automotive, ...") }}
+              </div>
+            </div>
+          </div>
+          <div class="col-12 col-md-6">
+            <div class="input-block">
+              {{ form.timezone.label(class_="form-label text-secondary small fw-semibold") }}
+              <div class="input-icon">
+                <i class="bi bi-clock"></i>
+                {{ form.timezone(class_="form-control input-premium", placeholder="UTC, EST, IST") }}
+              </div>
+            </div>
+          </div>
+          <div class="col-12 col-md-6">
+            <div class="input-block">
+              {{ form.size.label(class_="form-label text-secondary small fw-semibold") }}
+              <div class="input-icon">
+                <i class="bi bi-people"></i>
+                {{ form.size(class_="form-select input-premium") }}
+              </div>
+            </div>
+          </div>
+          <div class="col-12">
+            <div class="info-card p-3">
+              <div class="d-flex align-items-start gap-3">
+                <div class="info-icon"><i class="bi bi-info-circle"></i></div>
+                <div>
+                  <div class="fw-semibold text-body mb-1">What happens next?</div>
+                  <ul class="mb-0 text-secondary small">
+                    <li>Save your profile</li>
+                    <li>Invite your team</li>
+                    <li>Start using the dashboard</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="col-12 d-flex justify-content-end">
+            <button type="submit" name="{{ form.submit.name }}" id="{{ form.submit.id }}" value="{{ form.submit.data or form.submit.label.text or 'Submit' }}" class="btn btn-gradient submit-btn" data-ripple data-loading-text="Saving...">
+              <span class="btn-spinner spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+              <span class="btn-label">Save &amp; continue</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/button_spinner.js') }}"></script>
+{% endblock %}

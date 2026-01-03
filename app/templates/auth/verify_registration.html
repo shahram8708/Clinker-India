@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Verify Email | Clinker India{% endblock %}
+
+{% block head_extra %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/verify_registration.css') }}">
+{% endblock %}
+
+{% block content %}
+<section class="auth-shell mx-auto">
+  <div class="row g-4 align-items-stretch justify-content-center">
+    <div class="col-xl-5 col-lg-6">
+      <div class="verify-hero shadow-soft h-100">
+        <div class="verify-hero__bg"></div>
+        <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+          <span class="eyebrow text-secondary small d-inline-flex align-items-center gap-2"><i class="bi bi-envelope-check text-info"></i>Secure account activation</span>
+          <span class="pill pill-soft d-inline-flex align-items-center gap-1"><i class="bi bi-shield-lock"></i><span>One-time</span></span>
+        </div>
+        <div class="d-flex flex-wrap align-items-center gap-3 mb-3">
+          <div class="verify-avatar"><i class="bi bi-mailbox2"></i></div>
+          <div class="flex-grow-1">
+            <p class="text-secondary small mb-1">Email verification</p>
+            <h1 class="h3 fw-semibold mb-1 text-body">Verify your email</h1>
+            <span class="chip chip-info d-inline-flex align-items-center"><i class="bi bi-lightning-charge me-1"></i>Fast verification</span>
+          </div>
+        </div>
+        <p class="text-secondary mb-3">We sent a one-time passcode to <strong>{{ user.email }}</strong>. Enter it below to activate your Clinker India workspace.</p>
+        <div class="d-flex flex-wrap gap-2 mb-3">
+          <span class="pill"><i class="bi bi-envelope-at me-1"></i>Email ownership required</span>
+          <span class="pill"><i class="bi bi-hourglass-split me-1"></i>Expires quickly</span>
+          <span class="pill"><i class="bi bi-key me-1"></i>One-time use</span>
+        </div>
+        <div class="checklist shadow-sm">
+          <div class="checklist-item">
+            <span class="check-icon"><i class="bi bi-1-circle"></i></span>
+            <div>
+              <div class="fw-semibold text-body">Open your inbox</div>
+              <div class="text-secondary xsmall">Find the verification code we just sent.</div>
+            </div>
+          </div>
+          <div class="checklist-item">
+            <span class="check-icon"><i class="bi bi-2-circle"></i></span>
+            <div>
+              <div class="fw-semibold text-body">Enter the digits</div>
+              <div class="text-secondary xsmall">Type the code exactly as shown.</div>
+            </div>
+          </div>
+          <div class="checklist-item">
+            <span class="check-icon"><i class="bi bi-3-circle"></i></span>
+            <div>
+              <div class="fw-semibold text-body">Activate your workspace</div>
+              <div class="text-secondary xsmall">You’ll be redirected after successful verification.</div>
+            </div>
+          </div>
+        </div>
+        <div class="cta-card mt-3 d-flex align-items-center gap-3">
+          <div class="cta-icon"><i class="bi bi-box-arrow-in-right"></i></div>
+          <div class="flex-grow-1">
+            <div class="fw-semibold text-body">Back to sign in</div>
+            <div class="text-secondary small">Return if you need to restart the login flow.</div>
+          </div>
+          <a class="btn btn-ghost btn-sm" href="{{ url_for('auth.login') }}" data-ripple><i class="bi bi-box-arrow-in-right me-1"></i>Sign in</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-xl-7 col-lg-6">
+      <div class="surface-card auth-card shadow-soft h-100 p-4 p-md-5">
+        <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-4">
+          <div>
+            <p class="eyebrow text-secondary small mb-1">Verify email</p>
+            <h2 class="h4 fw-semibold text-body mb-1">Enter your verification code</h2>
+            <p class="text-secondary small mb-0">This confirms ownership of your email and secures your workspace setup.</p>
+          </div>
+          <span class="badge-soft d-inline-flex align-items-center gap-1"><i class="bi bi-shield-check"></i><span>Protected</span></span>
+        </div>
+        <form method="POST" class="auth-form" novalidate>
+          {{ form.hidden_tag() }}
+          <div class="input-block">
+            {{ form.otp.label(class_="form-label text-secondary small fw-semibold") }}
+            <div class="input-icon">
+              <i class="bi bi-shield-check"></i>
+              {{ form.otp(class_="form-control input-premium text-center text-uppercase", placeholder="6-8 digit code", autocomplete="one-time-code", inputmode="numeric", pattern="[0-9]{6,8}") }}
+            </div>
+            <div class="form-text text-secondary small">Expires{% if latest and latest.expires_at %} at {{ latest.expires_at.strftime('%H:%M UTC on %b %d') }}{% else %} soon{% endif %}. Don't share this code with anyone.</div>
+          </div>
+          <div class="d-grid mb-3">
+            <button type="submit" name="{{ form.submit.name }}" id="{{ form.submit.id }}" value="{{ form.submit.data or form.submit.label.text or 'Submit' }}" class="btn btn-gradient submit-btn" data-ripple data-loading-text="Verifying...">
+              <span class="btn-spinner spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+              <span class="btn-label">Verify &amp; continue</span>
+            </button>
+          </div>
+        </form>
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+          <div class="text-secondary small">Didn’t get it? Check spam or request a new code.</div>
+          <form method="POST" action="{{ url_for('auth.resend_registration_otp') }}" class="mb-0">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-ghost btn-sm submit-btn" data-ripple data-loading-text="Sending..." {% if latest and latest.sent_at %}aria-label="Resend verification code"{% endif %}>
+              <span class="btn-spinner spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+              <span class="btn-label">Resend code</span>
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/button_spinner.js') }}"></script>
+{% endblock %}

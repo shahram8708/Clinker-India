@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Not Found{% endblock %}
+{% block content %}
+<section class="py-5">
+  <div class="container">
+    <div class="row justify-content-center">
+      <div class="col-xl-8">
+        <div class="error-card premium-card p-4 p-md-5 position-relative overflow-hidden">
+          <div class="error-glow"></div>
+
+          <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <span class="badge-soft badge-time"><i class="bi bi-compass"></i> 404 Not Found</span>
+              <span class="badge-soft"><i class="bi bi-search"></i> We looked everywhere</span>
+            </div>
+            <span class="pill-soft pill-muted"><i class="bi bi-map"></i> Let us guide you back</span>
+          </div>
+
+          <div class="text-center mb-4">
+            <div class="icon-stack-lg gradient-blue mb-3"><i class="bi bi-compass"></i></div>
+            <h1 class="fw-bold h2 text-white mb-2">Page not found</h1>
+            <p class="text-secondary lead mb-3">The page or record you requested could not be located. It may have been moved or you may lack access.</p>
+            <div class="d-flex justify-content-center flex-wrap gap-2">
+              <a class="btn btn-outline-light btn-lg" href="{{ url_for('main.dashboard') }}" data-ripple>
+                <span class="btn-label"><i class="bi bi-house-door me-2"></i>Return home</span>
+              </a>
+            </div>
+          </div>
+
+          <div class="row g-3">
+            <div class="col-md-6">
+              <div class="action-panel h-100">
+                <div class="d-flex align-items-center gap-2 mb-2">
+                  <div class="icon-chip"><i class="bi bi-question-circle"></i></div>
+                  <span class="fw-semibold">Why this happens</span>
+                </div>
+                <ul class="error-checklist">
+                  <li><i class="bi bi-check-circle"></i><span>The link changed or the item was archived</span></li>
+                  <li><i class="bi bi-check-circle"></i><span>You may not have permission for this record</span></li>
+                  <li><i class="bi bi-check-circle"></i><span>A typo in the URL can also cause this</span></li>
+                </ul>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="action-panel h-100">
+                <div class="d-flex align-items-center gap-2 mb-2">
+                  <div class="icon-chip success"><i class="bi bi-stars"></i></div>
+                  <span class="fw-semibold">Get back on track</span>
+                </div>
+                <div class="d-flex flex-column gap-2 text-secondary">
+                  <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-collection text-info"></i>
+                    <span>Use dashboard shortcuts to find active pages</span>
+                  </div>
+                  <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-funnel text-success"></i>
+                    <span>Search for the item or filter by tenant</span>
+                  </div>
+                  <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-headset text-warning"></i>
+                    <span>Ask support to confirm if the item was removed</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script src="{{ url_for('static', filename='js/button_spinner.js') }}"></script>
+{% endblock %}

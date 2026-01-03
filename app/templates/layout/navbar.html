@@ -1,0 +1,102 @@
+<nav class="navbar navbar-dark premium-navbar border-bottom border-opacity-10 py-3" aria-label="Top navigation">
+  <div class="container-fluid align-items-center flex-wrap gap-3">
+    <div class="d-flex align-items-center gap-3 flex-grow-1 min-w-0">
+      <button class="btn btn-ghost btn-icon d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#mobileSidebar" aria-controls="mobileSidebar" aria-label="Toggle navigation">
+        <i class="bi bi-list"></i>
+      </button>
+      <a class="navbar-brand d-flex align-items-center gap-3 fw-bold" href="{{ url_for('main.dashboard') }}" rel="home" title="Clinker India | Industrial AI Copilot">
+        <span class="brand-mark d-inline-flex align-items-center justify-content-center rounded-3">
+          <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Clinker India logo">
+        </span>
+        <span class="d-flex flex-column lh-sm">
+          <span class="d-flex align-items-center gap-2">
+            Clinker India
+            <span class="brand-pill">AI Copilot</span>
+          </span>
+          <small class="mobileh text-secondary">Operational intelligence for cement & materials</small>
+        </span>
+      </a>
+      {% if current_user.is_authenticated %}
+        <div class="d-none d-md-flex align-items-center gap-2 flex-wrap text-nowrap ms-2">
+          <span class="chip chip-info text-uppercase d-inline-flex align-items-center gap-2 px-3 py-1">
+            <i class="bi bi-diagram-3"></i>
+            {{ current_user.organization.name if current_user.organization else 'Tenant' }}
+          </span>
+          <span class="role-chip ms-1 d-inline-flex align-items-center gap-2 px-3 py-1">
+            <i class="bi bi-person-badge"></i>
+            {{ 'Admin' if current_user.is_org_admin else 'User' }}
+          </span>
+        </div>
+      {% endif %}
+    </div>
+
+    {% if current_user.is_authenticated %}
+      <div class="nav-main-links d-none d-lg-flex align-items-center gap-4 ms-4" role="menubar" aria-label="Primary product navigation">
+        <a class="btn btn-link nav-link px-0 text-decoration-none d-inline-flex align-items-center gap-2" role="menuitem" href="{{ url_for('main.dashboard') }}" title="Platform overview">
+          <i class="bi bi-grid"></i>
+          <span>Platform overview</span>
+        </a>
+        <a class="btn btn-link nav-link px-0 text-decoration-none d-inline-flex align-items-center gap-2" role="menuitem" href="{{ url_for('main.analytics') }}" title="Analytics & insights">
+          <i class="bi bi-graph-up-arrow"></i>
+          <span>Analytics</span>
+        </a>
+        <a class="btn btn-link nav-link px-0 text-decoration-none d-inline-flex align-items-center gap-2" role="menuitem" href="{{ url_for('ops.activity_log') }}" title="Operations activity log">
+          <i class="bi bi-activity"></i>
+          <span>Operations activity</span>
+        </a>
+        {% if current_user.is_org_admin %}
+          <a class="btn btn-link nav-link px-0 text-decoration-none d-inline-flex align-items-center gap-2" role="menuitem" href="{{ url_for('tenant.user_management') }}" title="User and access management">
+            <i class="bi bi-shield-lock"></i>
+            <span>User management</span>
+          </a>
+        {% endif %}
+      </div>
+    {% endif %}
+
+    <div class="d-flex align-items-center gap-2 ms-auto flex-shrink-0">
+      {% if current_user.is_authenticated %}
+        <a class="btn btn-ghost btn-icon" data-ripple href="{{ url_for('main.dashboard') }}" title="Command center" aria-label="Command center">
+          <i class="bi bi-lightning-charge" aria-hidden="true"></i>
+        </a>
+        <a class="btn btn-ghost btn-icon position-relative" data-ripple href="{{ url_for('ops.activity_log') }}" title="Alerts and notifications" aria-label="Alerts and notifications">
+          <i class="bi bi-bell" aria-hidden="true"></i>
+          <span class="dot-pulse"></span>
+        </a>
+        {% if current_user.is_org_admin %}
+          <a class="btn btn-ghost btn-icon" data-ripple href="{{ url_for('tenant.user_management') }}" title="Manage users and roles" aria-label="Manage users and roles">
+            <i class="bi bi-people" aria-hidden="true"></i>
+          </a>
+        {% endif %}
+        <div class="dropdown">
+          {% set initials = (current_user.full_name or current_user.email or 'U')[:1].upper() %}
+          <button class="btn btn-ghost d-flex align-items-center gap-2" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+            <span class="avatar-circle">{{ initials }}</span>
+            <div class="d-none d-sm-flex flex-column align-items-start text-start">
+              <span class="small fw-semibold">{{ current_user.full_name or current_user.email }}</span>
+              <span class="text-secondary xsmall">{{ current_user.email }}</span>
+            </div>
+            <i class="bi bi-chevron-down small text-secondary"></i>
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+            <li class="px-3 py-2 text-secondary small">Signed in</li>
+            <li><a class="dropdown-item d-flex align-items-center gap-2" href="{{ url_for('main.dashboard') }}"><i class="bi bi-grid"></i><span>Dashboard</span></a></li>
+            {% if current_user.is_org_admin %}
+              <li><a class="dropdown-item d-flex align-items-center gap-2" href="{{ url_for('tenant.user_management') }}"><i class="bi bi-shield-lock"></i><span>Admin</span></a></li>
+            {% endif %}
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item text-danger d-flex align-items-center gap-2" href="{{ url_for('auth.logout') }}"><i class="bi bi-box-arrow-right"></i><span>Logout</span></a></li>
+          </ul>
+        </div>
+      {% else %}
+        <a class="btn btn-outline-light btn-sm d-flex align-items-center gap-2" href="{{ url_for('auth.login') }}">
+          <i class="bi bi-door-open"></i>
+          <span>Login</span>
+        </a>
+        <a class="btn btn-primary btn-sm d-flex align-items-center gap-2" href="{{ url_for('auth.register') }}">
+          <i class="bi bi-person-plus"></i>
+          <span>Sign up</span>
+        </a>
+      {% endif %}
+    </div>
+  </div>
+</nav>

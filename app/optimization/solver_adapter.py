@@ -557,6 +557,8 @@ class _DeterministicMilpSolver:
             for t in periods
         }
 
+        iu_sources = set(iu_ids)
+
         Inv = {}
         Shortage = {}
         scenario_cost_exprs = []

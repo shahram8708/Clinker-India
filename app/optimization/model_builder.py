@@ -73,6 +73,7 @@ class RobustModelBuilder:
             inventory=dataset.inventory,
             demand=stressed,
             safety_stock=dataset.safety_stock,
+            min_fulfillment=dataset.min_fulfillment,
             metadata={**dataset.metadata, "robust_applied": True, "robust_formulation": "minmax"},
             # Carry forward extended parameters
             period_specific_costs=dataset.period_specific_costs,

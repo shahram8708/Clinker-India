@@ -1,10 +1,21 @@
-"""Translate database entities into canonical optimization datasets."""
+"""Translate nine-sheet clinker tables into canonical optimization datasets."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Dict, List, Tuple
 
-from ..models import Inventory, PlanningScenario, Plant, TransportRoute
+from ..models import (
+    ClinkerCapacity,
+    ClinkerDemand,
+    HubOpeningStock,
+    IUGUClosingStock,
+    IUGUConstraint,
+    IUGUOpeningStock,
+    IUGUType,
+    LogisticsIUGU,
+    PlanningScenario,
+    ProductionCost,
+)
 
 
 @dataclass
@@ -19,6 +30,7 @@ class CanonicalDataset:
     inventory: dict[int, float]
     demand: dict[int, list[float]]
     safety_stock: dict[int, float]
+    min_fulfillment: dict[int, list[float]] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
     
     # Extended multi-period parameters for new dataset structure
@@ -43,226 +55,262 @@ def _to_float(value) -> float:
     return float(value) if value is not None else 0.0
 
 
+def _zeros(periods: int) -> List[float]:
+    return [0.0 for _ in range(periods)]
+
+
 class DataMapper:
-    """Loads tenant-safe data and normalizes it for optimization."""
+    """Loads tenant-safe data from the nine-sheet schema and normalizes it for optimization."""
 
     def __init__(self, session):
         self.session = session
 
     def load_dataset(self, organization_id: int, scenario: PlanningScenario) -> CanonicalDataset:
-        plants = Plant.for_org(organization_id).filter_by(status="active").all()
-        routes = TransportRoute.for_org(organization_id).filter_by(status="active").all()
-        inventories = Inventory.for_org(organization_id).all()
+        periods = max(int(getattr(scenario, "periods", 1) or 1), 1)
 
-        inventory_map = {inv.plant_id: _to_float(inv.current_inventory) for inv in inventories}
-        safety_stock_map = {plant.id: _to_float(plant.safety_stock_level) for plant in plants}
+        def _get_rows(model, order_by=None):
+            """Fetch scenario-scoped rows; fall back to baseline rows when missing."""
+            def _ordered(query):
+                return query.order_by(*order_by) if order_by else query
 
-        demand = self._extract_demand(scenario, plants)
+            scoped = model.for_org(organization_id)
+            rows = _ordered(scoped.filter_by(planning_scenario_id=scenario.id)).all()
+            if rows:
+                return rows
+            return _ordered(scoped.filter_by(planning_scenario_id=None)).all()
 
-        plant_payload = [
-            {
-                "id": plant.id,
-                "name": plant.plant_name,
-                "type": plant.plant_type,
-                "location": plant.location,
-                "production_capacity": _to_float(plant.production_capacity),
-                "production_cost": _to_float(getattr(plant, "production_cost", None)),
-                "consumption_capacity": _to_float(plant.consumption_capacity),
-                "holding_cost": _to_float(getattr(plant, "holding_cost", None)),
-                "max_inventory_capacity": _to_float(plant.max_inventory_capacity),
-            }
-            for plant in plants
-        ]
+        plants = _get_rows(IUGUType, order_by=[IUGUType.code])
 
-        route_payload = [
-            {
-                "id": route.id,
-                "source": route.source_plant_id,
-                "destination": route.destination_plant_id,
-                "mode": route.mode,
-                "trip_capacity": _to_float(route.trip_capacity),
-                "min_batch_quantity": _to_float(route.min_batch_quantity),
-                "max_trips_per_period": route.max_trips_per_period,
-                "cost_per_trip": _to_float(route.cost_per_trip),
-                "cost_per_ton": _to_float(getattr(route, "cost_per_ton", None)),
-                "lead_time": getattr(route, "lead_time", None),
-            }
-            for route in routes
-        ]
-        
-        # Extract extended multi-period parameters from scenario metadata or Excel data
-        extended_params = self._extract_extended_parameters(scenario, plants, routes)
+        # Raw table reads (all used to build the canonical graph)
+        capacities_raw = _get_rows(ClinkerCapacity)
+        prod_cost_raw = _get_rows(ProductionCost)
+        demand_rows = _get_rows(ClinkerDemand)
+        inventory_rows = _get_rows(IUGUOpeningStock)
+        hub_rows = _get_rows(HubOpeningStock)
+        close_rows = _get_rows(IUGUClosingStock)
+        logistics_rows = _get_rows(LogisticsIUGU)
+        constraint_rows = _get_rows(IUGUConstraint)
+
+        # Build a complete set of plant codes (include any codes referenced only in logistics/demand/constraints)
+        plant_records: Dict[str, str] = {p.code: p.plant_type for p in plants}
+
+        def _infer_type(code: str) -> str:
+            if code.startswith("GU"):
+                return "GU"
+            if code.startswith("IU") or code.startswith("EXT"):
+                return "IU"
+            return "IU"
+
+        def _add_code(code: str | None) -> None:
+            if code and code not in plant_records:
+                plant_records[code] = _infer_type(code)
+
+        for row in capacities_raw:
+            _add_code(row.plant_code)
+        for row in prod_cost_raw:
+            _add_code(row.plant_code)
+        for row in demand_rows:
+            _add_code(row.plant_code)
+        for row in inventory_rows:
+            _add_code(row.plant_code)
+        for row in hub_rows:
+            _add_code(row.from_code)
+            _add_code(row.to_code)
+        for row in close_rows:
+            _add_code(row.plant_code)
+        for row in logistics_rows:
+            _add_code(row.from_code)
+            _add_code(row.to_code)
+        for row in constraint_rows:
+            _add_code(row.from_code)
+            _add_code(row.to_code)
+
+        code_to_id: Dict[str, int] = {code: idx + 1 for idx, code in enumerate(sorted(plant_records.keys()))}
+        id_to_code: Dict[int, str] = {v: k for k, v in code_to_id.items()}
+
+        capacities: Dict[int, List[float]] = {pid: _zeros(periods) for pid in code_to_id.values()}
+        for row in capacities_raw:
+            pid = code_to_id.get(row.plant_code)
+            if pid is None:
+                continue
+            idx = max(min(int(row.time_period or 1), periods), 1) - 1
+            capacities[pid][idx] = _to_float(row.capacity_tons)
+
+        prod_costs: Dict[int, List[float]] = {pid: _zeros(periods) for pid in code_to_id.values()}
+        for row in prod_cost_raw:
+            pid = code_to_id.get(row.plant_code)
+            if pid is None:
+                continue
+            idx = max(min(int(row.time_period or 1), periods), 1) - 1
+            prod_costs[pid][idx] = _to_float(row.cost_per_ton)
+
+        # Demand and min fulfillment per plant per period
+        demand: Dict[int, List[float]] = {pid: _zeros(periods) for pid in code_to_id.values()}
+        min_fulfillment: Dict[int, List[float]] = {pid: [1.0] * periods for pid in code_to_id.values()}
+        for row in demand_rows:
+            pid = code_to_id.get(row.plant_code)
+            if pid is None:
+                continue
+            idx = max(min(int(row.time_period or 1), periods), 1) - 1
+            demand[pid][idx] = _to_float(row.demand_tons)
+            min_fulfillment[pid][idx] = max(min(_to_float(row.min_fulfillment_pct) / 100.0, 1.0), 0.0)
+
+        # Opening stock
+        inventory = {pid: 0.0 for pid in code_to_id.values()}
+        for row in inventory_rows:
+            pid = code_to_id.get(row.plant_code)
+            if pid is not None:
+                inventory[pid] = _to_float(row.opening_stock)
+
+        # Hub opening stock (optional, tracked in metadata only for now)
+        hub_opening_stocks: Dict[Tuple[int, int], float] = {}
+        for row in hub_rows:
+            iu_id = code_to_id.get(row.from_code)
+            hub_id = code_to_id.get(row.to_code)
+            if iu_id is not None and hub_id is not None:
+                hub_opening_stocks[(hub_id, iu_id)] = _to_float(row.opening_stock)
+
+        # Closing stock bounds per plant-period
+        min_close: Dict[Tuple[int, int], float] = {}
+        max_close: Dict[Tuple[int, int], float] = {}
+        for row in close_rows:
+            pid = code_to_id.get(row.plant_code)
+            if pid is None:
+                continue
+            idx = max(min(int(row.time_period or 1), periods), 1)
+            min_close[(pid, idx)] = _to_float(row.min_close_stock)
+            max_close[(pid, idx)] = _to_float(row.max_close_stock) if row.max_close_stock is not None else float("inf")
+
+        # Safety stock baseline: lowest min_close across periods (used as per-plant floor)
+        safety_stock = {pid: 0.0 for pid in code_to_id.values()}
+        for (pid, _), val in min_close.items():
+            safety_stock[pid] = min(safety_stock.get(pid, val) or val, val)
+
+        # Logistics routes grouped by (from, to, mode)
+        route_groups: Dict[Tuple[str, str, str], List[LogisticsIUGU]] = {}
+        for row in logistics_rows:
+            key = (row.from_code, row.to_code, row.transport_code)
+            route_groups.setdefault(key, []).append(row)
+
+        routes = []
+        freight_costs: Dict[int, List[float]] = {}
+        handling_costs: Dict[int, List[float]] = {}
+        batch_multipliers: Dict[int, float] = {}
+        transport_modes: List[str] = []
+
+        route_id = 1
+        for (from_code, to_code, mode), entries in route_groups.items():
+            src_id = code_to_id.get(from_code)
+            dst_id = code_to_id.get(to_code)
+            if src_id is None or dst_id is None:
+                continue
+
+            # Assume multiplier constant across periods; take the first non-zero value
+            multiplier_val = None
+            for entry in entries:
+                if entry.quantity_multiplier:
+                    multiplier_val = _to_float(entry.quantity_multiplier)
+                    break
+
+            transport_modes.append(mode)
+            routes.append(
+                {
+                    "id": route_id,
+                    "source": src_id,
+                    "destination": dst_id,
+                    "mode": mode,
+                    # quantity_multiplier acts as trip capacity; batch linkage enforced in solver
+                    "trip_capacity": multiplier_val if multiplier_val is not None else 0.0,
+                    "min_batch_quantity": 0.0,
+                    "max_trips_per_period": None,
+                }
+            )
+
+            freight_costs[route_id] = _zeros(periods)
+            handling_costs[route_id] = _zeros(periods)
+            batch_multipliers[route_id] = multiplier_val or 1.0
+
+            for entry in entries:
+                idx = max(min(int(entry.time_period or 1), periods), 1) - 1
+                freight_costs[route_id][idx] = _to_float(entry.freight_cost)
+                handling_costs[route_id][idx] = _to_float(entry.handling_cost)
+
+            route_id += 1
+
+        # IUGU constraints per period (flow bounds)
+        flow_constraints: List[dict] = []
+        for row in constraint_rows:
+            src_id = code_to_id.get(row.from_code)
+            dst_id = code_to_id.get(row.to_code) if row.to_code else None
+            if src_id is None:
+                continue
+            flow_constraints.append(
+                {
+                    "source": src_id,
+                    "destination": dst_id,
+                    "mode": row.transport_code or None,
+                    "period": int(row.time_period or 1),
+                    "type": row.constraint_type,
+                    "value": _to_float(row.value),
+                }
+            )
+
+        # Legacy iugu_constraints (min/max across all periods) left empty for now
+        iugu_constraints: Dict[str, Tuple[float, float]] = {}
+
+        # Plant payload for solver
+        plant_payload = []
+        default_prod_penalty = 1_000_000.0
+        holding_cost_default = 5.0  # ₹5 per ton-period
+
+        for code, pid in code_to_id.items():
+            plant_type = plant_records.get(code, "GU")
+            cap_series = capacities.get(pid, _zeros(periods))
+            cost_series = prod_costs.get(pid, _zeros(periods))
+            # Use first period cost as a representative scalar for downstream logging; full series kept separately
+            representative_cost = cost_series[0] if any(cost_series) else default_prod_penalty
+            plant_payload.append(
+                {
+                    "id": pid,
+                    "code": code,
+                    "type": plant_type,
+                    "production_capacity": max(cap_series) if plant_type == "IU" else 0.0,
+                    "production_cost": representative_cost,
+                    "consumption_capacity": 0.0,
+                    "holding_cost": holding_cost_default,
+                    "max_inventory_capacity": float("inf"),
+                }
+            )
+
+        metadata = {
+            "scenario_name": scenario.scenario_name,
+            "id_to_code": id_to_code,
+            "code_to_id": code_to_id,
+        }
 
         return CanonicalDataset(
             organization_id=organization_id,
             scenario_id=scenario.id,
-            periods=scenario.periods,
+            periods=periods,
             plants=plant_payload,
-            routes=route_payload,
-            inventory=inventory_map,
+            routes=routes,
+            inventory=inventory,
             demand=demand,
-            safety_stock=safety_stock_map,
-            metadata={"scenario_name": scenario.scenario_name},
-            # Extended parameters
-            period_specific_costs=extended_params.get("period_costs", {}),
-            batch_multipliers=extended_params.get("batch_multipliers", {}),
-            freight_costs=extended_params.get("freight_costs", {}),
-            handling_costs=extended_params.get("handling_costs", {}),
-            hub_codes=extended_params.get("hub_codes", {}),
-            iugu_constraints=extended_params.get("iugu_constraints", {}),
-            period_capacities=extended_params.get("period_capacities", {}),
-            period_demands=extended_params.get("period_demands", {}),
-            # New dummy dataset parameters
-            hub_opening_stocks=extended_params.get("hub_opening_stocks", {}),
-            hub_source_counts=extended_params.get("hub_source_counts", {}),
-            min_closing_stocks=extended_params.get("min_closing_stocks", {}),
-            max_closing_stocks=extended_params.get("max_closing_stocks", {}),
-            flow_constraints=extended_params.get("flow_constraints", []),
-            transport_modes=extended_params.get("transport_modes", []),
+            safety_stock=safety_stock,
+            min_fulfillment=min_fulfillment,
+            metadata=metadata,
+            period_specific_costs=prod_costs,
+            batch_multipliers=batch_multipliers,
+            freight_costs=freight_costs,
+            handling_costs=handling_costs,
+            hub_codes={},
+            iugu_constraints=iugu_constraints,
+            period_capacities=capacities,
+            period_demands={},
+            hub_opening_stocks=hub_opening_stocks,
+            hub_source_counts={},
+            min_closing_stocks=min_close,
+            max_closing_stocks=max_close,
+            flow_constraints=flow_constraints,
+            transport_modes=transport_modes,
         )
-
-    def _extract_demand(self, scenario: PlanningScenario, plants: list[Plant]) -> dict[int, list[float]]:
-        """Prefer explicit per-period demand; fallback to legacy consumption-capacity logic."""
-        periods = max(getattr(scenario, "periods", 0) or 0, 1)
-
-        raw = None
-        for attr in ("demand", "demands", "demand_plan", "demand_profile"):
-            candidate = getattr(scenario, attr, None)
-            if candidate:
-                raw = candidate
-                break
-
-        if raw is None:
-            meta = getattr(scenario, "summary", {}) or {}
-            if not isinstance(meta, dict):
-                meta = {}
-            raw = meta.get("demand") or meta.get("demands") or meta.get("demand_plan")
-
-        demand: dict[int, list[float]] = {}
-        if isinstance(raw, dict):
-            for plant in plants:
-                series = raw.get(str(plant.id)) or raw.get(plant.id) or []
-                cleaned = [_to_float(v) for v in list(series)[:periods]]
-                if len(cleaned) < periods:
-                    cleaned.extend([0.0] * (periods - len(cleaned)))
-                demand[plant.id] = cleaned
-
-        if not demand:
-            # Fallback: treat GU consumption capacity as demand each period
-            for plant in plants:
-                per_period = [_to_float(plant.consumption_capacity)] * periods if plant.plant_type == "GU" else [0.0] * periods
-                demand[plant.id] = per_period
-
-        return demand    
-    def _extract_extended_parameters(self, scenario: PlanningScenario, plants: list[Plant], routes: list[TransportRoute]) -> dict[str, Any]:
-        """Extract multi-period specific parameters, batch multipliers, hub codes, and constraints from scenario metadata or Excel."""
-        periods = max(getattr(scenario, "periods", 0) or 0, 1)
-        
-        # Try to get extended data from scenario summary or metadata
-        meta = getattr(scenario, "summary", {}) or {}
-        if not isinstance(meta, dict):
-            meta = {}
-        
-        result: dict[str, Any] = {
-            "period_costs": {},
-            "batch_multipliers": {},
-            "freight_costs": {},
-            "handling_costs": {},
-            "hub_codes": {},
-            "iugu_constraints": {},
-            "period_capacities": {},
-            "period_demands": {},
-            # New dummy dataset parameters
-            "hub_opening_stocks": {},
-            "hub_source_counts": {},
-            "min_closing_stocks": {},
-            "max_closing_stocks": {},
-            "flow_constraints": [],
-            "transport_modes": [],
-        }
-        
-        # Extract batch multipliers from routes metadata or summary
-        batch_mult_data = meta.get("batch_multipliers", {})
-        for route in routes:
-            route_id = route.id
-            # Try route-specific multiplier, fallback to metadata, finally default to 1.0 (no multiplier)
-            multiplier = _to_float(getattr(route, "batch_multiplier", None))
-            if not multiplier:
-                multiplier = _to_float(batch_mult_data.get(str(route_id), batch_mult_data.get(route_id, 1.0)))
-            if not multiplier:
-                multiplier = 1.0
-            result["batch_multipliers"][route_id] = multiplier
-        
-        # Extract period-specific freight and handling costs
-        freight_data = meta.get("freight_costs", {})
-        handling_data = meta.get("handling_costs", {})
-        for route in routes:
-            route_id = route.id
-            # Freight costs per period
-            freight_series = freight_data.get(str(route_id), freight_data.get(route_id, []))
-            if isinstance(freight_series, (list, tuple)):
-                freight_cleaned = [_to_float(v) for v in list(freight_series)[:periods]]
-            else:
-                # Single value: replicate across periods
-                freight_cleaned = [_to_float(freight_series)] * periods
-            if len(freight_cleaned) < periods:
-                # Pad with last value or route's cost_per_trip
-                last_val = freight_cleaned[-1] if freight_cleaned else _to_float(route.cost_per_trip)
-                freight_cleaned.extend([last_val] * (periods - len(freight_cleaned)))
-            result["freight_costs"][route_id] = freight_cleaned
-            
-            # Handling costs per period
-            handling_series = handling_data.get(str(route_id), handling_data.get(route_id, []))
-            if isinstance(handling_series, (list, tuple)):
-                handling_cleaned = [_to_float(v) for v in list(handling_series)[:periods]]
-            else:
-                handling_cleaned = [_to_float(handling_series)] * periods
-            if len(handling_cleaned) < periods:
-                last_val = handling_cleaned[-1] if handling_cleaned else 0.0
-                handling_cleaned.extend([last_val] * (periods - len(handling_cleaned)))
-            result["handling_costs"][route_id] = handling_cleaned
-        
-        # Extract hub codes from plants metadata
-        hub_data = meta.get("hub_codes", {})
-        for plant in plants:
-            plant_id = plant.id
-            hub_code = getattr(plant, "hub_code", None) or hub_data.get(str(plant_id), hub_data.get(plant_id, ""))
-            if hub_code:
-                result["hub_codes"][plant_id] = str(hub_code)
-        
-        # Extract IUGU constraints (min, max flow bounds per IU-GU pair)
-        iugu_data = meta.get("iugu_constraints", {})
-        for constraint_key, bounds in iugu_data.items():
-            # Expected format: "IU1_GU2" -> {"min": 100, "max": 500}
-            if isinstance(bounds, dict):
-                min_val = _to_float(bounds.get("min", 0.0))
-                max_val = _to_float(bounds.get("max", float("inf")))
-                result["iugu_constraints"][str(constraint_key)] = (min_val, max_val)
-            elif isinstance(bounds, (list, tuple)) and len(bounds) >= 2:
-                result["iugu_constraints"][str(constraint_key)] = (_to_float(bounds[0]), _to_float(bounds[1]))
-        
-        # Extract period-specific capacities and demands
-        capacity_data = meta.get("period_capacities", {})
-        demand_data = meta.get("period_demands", {})
-        
-        for plant in plants:
-            plant_id = plant.id
-            cap_series = capacity_data.get(str(plant_id), capacity_data.get(plant_id, []))
-            if isinstance(cap_series, (list, tuple)):
-                cap_cleaned = [_to_float(v) for v in list(cap_series)[:periods]]
-            else:
-                cap_cleaned = [_to_float(cap_series or plant.production_capacity)] * periods
-            if len(cap_cleaned) < periods:
-                last_val = cap_cleaned[-1] if cap_cleaned else _to_float(plant.production_capacity)
-                cap_cleaned.extend([last_val] * (periods - len(cap_cleaned)))
-            result["period_capacities"][plant_id] = cap_cleaned
-            
-            demand_series = demand_data.get(str(plant_id), demand_data.get(plant_id, []))
-            if isinstance(demand_series, (list, tuple)):
-                for t_idx, val in enumerate(list(demand_series)[:periods]):
-                    result["period_demands"][(plant_id, t_idx + 1)] = _to_float(val)
-            else:
-                # Single value or no data: use existing demand extraction
-                pass
-        
-        return result

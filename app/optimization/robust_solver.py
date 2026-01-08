@@ -487,11 +487,13 @@ class RobustSolver:
             inventory=copy.deepcopy(dataset.inventory),
             demand=copy.deepcopy(dataset.demand),
             safety_stock=copy.deepcopy(dataset.safety_stock),
+            min_fulfillment=copy.deepcopy(dataset.min_fulfillment),
             metadata={**dataset.metadata, "relaxed_routes": True},
         )
 
     def _aggregate_dataset(self, dataset: CanonicalDataset) -> CanonicalDataset:
         aggregated_demand = {pid: [sum(periods)] for pid, periods in dataset.demand.items()}
+        aggregated_min = {pid: [min(periods) if periods else 1.0] for pid, periods in dataset.min_fulfillment.items()}
         return CanonicalDataset(
             organization_id=dataset.organization_id,
             scenario_id=dataset.scenario_id,
@@ -501,6 +503,7 @@ class RobustSolver:
             inventory=copy.deepcopy(dataset.inventory),
             demand=aggregated_demand,
             safety_stock=copy.deepcopy(dataset.safety_stock),
+            min_fulfillment=aggregated_min,
             metadata={**dataset.metadata, "aggregated_periods": True},
         )
 

@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+{% block title %}Workspaces | Clinker India{% endblock %}
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3 mb-4">
+    <div>
+      <p class="text-uppercase text-secondary small mb-1">Operations</p>
+      <h1 class="h3 mb-0 d-flex align-items-center gap-2">
+        <i class="bi bi-columns-gap text-primary"></i>
+        Workspaces
+      </h1>
+      <p class="text-secondary mb-0">Browse every workspace you have created and jump straight into its network view.</p>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-4">
+    <div class="card-header bg-white d-flex flex-column flex-lg-row align-items-start align-items-lg-center gap-3">
+      <div>
+        <h2 class="h6 mb-1">Create a new workspace</h2>
+        <p class="text-secondary small mb-0">Name it and we will scaffold a fresh dataset for you.</p>
+      </div>
+      <form class="d-flex flex-column flex-lg-row gap-2 ms-lg-auto" method="POST" action="{{ url_for('ops.create_workspace') }}">
+        {{ workspace_form.csrf_token }}
+        {{ workspace_form.name(class_='form-control form-control-sm', placeholder='Workspace name') }}
+        {{ workspace_form.description(class_='form-control form-control-sm', placeholder='Description (optional)') }}
+        {{ workspace_form.submit(class_='btn btn-primary btn-sm') }}
+      </form>
+    </div>
+  </div>
+
+  {% if workspaces %}
+    <div class="row g-3">
+      {% for ws in workspaces %}
+        {% set datasets = datasets_by_ws.get(ws.id, []) %}
+        <div class="col-12 col-md-6 col-lg-4">
+          <div class="card h-100 shadow-sm">
+            <div class="card-body d-flex flex-column gap-2">
+              <div class="d-flex align-items-center gap-2">
+                <span class="badge text-bg-primary bg-opacity-10 text-primary">Workspace</span>
+                <span class="text-secondary small">Created {{ ws.created_at.strftime('%Y-%m-%d') if ws.created_at else '' }}</span>
+              </div>
+              <h3 class="h5 mb-0">{{ ws.name }}</h3>
+              {% if ws.description %}
+                <p class="text-secondary small mb-0">{{ ws.description }}</p>
+              {% endif %}
+              <div class="d-flex flex-wrap gap-2 small text-secondary">
+                <span class="badge text-bg-light">Datasets: {{ datasets|length }}</span>
+                {% if datasets %}
+                  {% for ds in datasets[:3] %}
+                    <span class="badge text-bg-secondary">{{ ds.label }}</span>
+                  {% endfor %}
+                  {% if datasets|length > 3 %}
+                    <span class="badge text-bg-secondary">+{{ datasets|length - 3 }}</span>
+                  {% endif %}
+                {% else %}
+                  <span class="text-secondary">No datasets yet</span>
+                {% endif %}
+              </div>
+              <div class="mt-auto d-flex gap-2">
+                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('ops.network', workspace_id=ws.id) }}">
+                  <i class="bi bi-diagram-3 me-1"></i>Open network
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="card shadow-sm">
+      <div class="card-body text-center py-5">
+        <p class="mb-2">No workspaces yet.</p>
+        <p class="text-secondary mb-3">Create your first workspace to start organizing datasets.</p>
+        <a class="btn btn-primary btn-sm" href="#" onclick="document.querySelector('form[action=\'{{ url_for('ops.create_workspace') }}\']').scrollIntoView({behavior: 'smooth'});">
+          <i class="bi bi-plus-circle me-1"></i>Create workspace
+        </a>
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

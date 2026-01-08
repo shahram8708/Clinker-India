@@ -218,9 +218,9 @@
                 {% for route in routes %}
                   <li class="d-flex align-items-center gap-2 tile-row">
                     <div class="tile-icon text-info"><i class="bi bi-truck"></i></div>
-                    <span class="flex-grow-1">{{ route.source_plant.plant_name }} -> {{ route.destination_plant.plant_name }}</span>
-                    <span class="chip chip-info">{{ route.mode }}</span>
-                    <span class="chip {{ 'chip-info' if route.status == 'active' else 'chip-soft' }}">{{ route.status|capitalize }}</span>
+                    <span class="flex-grow-1">{{ route.from_code }} → {{ route.to_code }}</span>
+                    <span class="chip chip-info">{{ route.transport_code }}</span>
+                    <span class="chip chip-soft">Period {{ route.time_period }}</span>
                   </li>
                 {% endfor %}
                 {% if not routes %}
@@ -387,11 +387,11 @@
 
       ctxLines.push("Routes (sample):");
       {% for route in routes[:8] %}
-        ctxLines.push({{ ("- %s -> %s via %s (%s)." % (
-          route.source_plant.plant_name,
-          route.destination_plant.plant_name,
-          route.mode,
-          route.status,
+        ctxLines.push({{ ("- %s -> %s via %s (period %s)." % (
+          route.from_code,
+          route.to_code,
+          route.transport_code,
+          route.time_period,
         )) | tojson }});
       {% endfor %}
       {% if routes|length > 8 %}

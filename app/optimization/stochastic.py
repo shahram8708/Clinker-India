@@ -33,6 +33,7 @@ def generate_scenarios(dataset: CanonicalDataset, samples: int) -> List[Canonica
                 inventory=dataset.inventory,
                 demand=adjusted,
                 safety_stock=dataset.safety_stock,
+                min_fulfillment=dataset.min_fulfillment,
                 metadata={**dataset.metadata, "scenario_probability": probability, "sample": idx + 1},
             )
         )

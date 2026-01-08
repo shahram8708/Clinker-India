@@ -11,14 +11,18 @@ from flask_mail import Message
 from ..extensions import db, mail
 from ..models import (
     ActivityLog,
+    ClinkerCapacity,
+    ClinkerDemand,
     ContactRequest,
     Inventory,
+    IUGUType,
+    LogisticsIUGU,
     Notification,
     Organization,
     OrganizationSubscription,
+    Plant,
     OptimizationJob,
     PlanningScenario,
-    Plant,
     TransportRoute,
     User,
     UserInvitation,
@@ -44,15 +48,18 @@ def dashboard():
 
     pending_invites = _pending_invites_for_email(current_user.email)
 
+    iugus = IUGUType.for_org(org_id).order_by(IUGUType.code)
+    logistics = LogisticsIUGU.for_org(org_id)
+
     metrics = {
         "active_users": User.query.filter_by(organization_id=org_id, is_active=True).count(),
         "pending_invites": UserInvitation.query.filter_by(organization_id=org_id, status="pending").count(),
         "total_users": User.query.filter_by(organization_id=org_id).count(),
         "org_status": organization.status if organization else "unknown",
-        "total_plants": Plant.for_org(org_id).count(),
-        "iu_count": Plant.for_org(org_id).filter_by(plant_type="IU").count(),
-        "gu_count": Plant.for_org(org_id).filter_by(plant_type="GU").count(),
-        "active_routes": TransportRoute.for_org(org_id).filter_by(status="active").count(),
+        "total_plants": iugus.count(),
+        "iu_count": iugus.filter_by(plant_type="IU").count(),
+        "gu_count": iugus.filter_by(plant_type="GU").count(),
+        "active_routes": logistics.count(),
         "scenario_count": PlanningScenario.for_org(org_id).count(),
     }
 
@@ -70,15 +77,15 @@ def dashboard():
     inventory_alerts = [rec for rec in inventory_records if rec.below_safety]
 
     routes = (
-        TransportRoute.for_org(org_id)
-        .order_by(TransportRoute.created_at.desc())
+        logistics
+        .order_by(LogisticsIUGU.created_at.desc())
         .limit(5)
         .all()
     )
 
     plants = (
-        Plant.for_org(org_id)
-        .order_by(Plant.created_at.desc())
+        iugus
+        .order_by(IUGUType.created_at.desc())
         .limit(5)
         .all()
     )
@@ -436,34 +443,44 @@ def accept_self_invitation(invitation_id: int):
 
 
 def _build_ai_context(org_id: int) -> str:
-    """Assemble a short domain context for the AI with plant capacities."""
-    plants = (
-        Plant.for_org(org_id)
-        .order_by(Plant.plant_name)
+    """Assemble a short domain context for the AI with IUGU codes and nine-sheet data."""
+    iugus = (
+        IUGUType.for_org(org_id)
+        .order_by(IUGUType.code)
         .all()
     )
 
-    if not plants:
+    if not iugus:
         return ""
 
-    total_production = sum(_safe_float(plant.production_capacity) for plant in plants)
-    total_consumption = sum(_safe_float(plant.consumption_capacity) for plant in plants)
-    total_inventory = sum(_safe_float(plant.max_inventory_capacity) for plant in plants)
+    # Pull periodized capacities and demand for quick stats
+    caps = ClinkerCapacity.for_org(org_id).all()
+    demands = ClinkerDemand.for_org(org_id).all()
+    cap_by_code = {}
+    for row in caps:
+        cap_by_code.setdefault(row.plant_code, 0.0)
+        cap_by_code[row.plant_code] += _safe_float(row.capacity_tons)
+    demand_by_code = {}
+    for row in demands:
+        demand_by_code.setdefault(row.plant_code, 0.0)
+        demand_by_code[row.plant_code] += _safe_float(row.demand_tons)
+
+    total_prod = sum(cap_by_code.values())
+    total_demand = sum(demand_by_code.values())
 
     lines = [
-        f"Plant summary: count={len(plants)}, total production capacity={total_production:.2f}, total consumption capacity={total_consumption:.2f}, total max inventory={total_inventory:.2f}.",
-        "Plant details (trimmed):",
+        f"IUGU summary: count={len(iugus)}, total production-ish capacity={total_prod:.2f}, total demand={total_demand:.2f}.",
+        "IUGU details (trimmed):",
     ]
 
     max_listed = 12
-    for plant in plants[:max_listed]:
-        location = plant.location or "N/A"
-        lines.append(
-            f"{plant.plant_name} [{plant.plant_type}] in {location}: production={_safe_float(plant.production_capacity):.2f}, consumption={_safe_float(plant.consumption_capacity):.2f}, max inventory={_safe_float(plant.max_inventory_capacity):.2f}.",
-        )
+    for iu in iugus[:max_listed]:
+        cap = cap_by_code.get(iu.code, 0.0)
+        dem = demand_by_code.get(iu.code, 0.0)
+        lines.append(f"{iu.code} [{iu.plant_type}]: cap≈{cap:.2f}, demand≈{dem:.2f}.")
 
-    if len(plants) > max_listed:
-        lines.append(f"...{len(plants) - max_listed} additional plants not listed to keep context short.")
+    if len(iugus) > max_listed:
+        lines.append(f"...{len(iugus) - max_listed} additional IUGUs not listed to keep context short.")
 
     return "\n".join(lines)
 

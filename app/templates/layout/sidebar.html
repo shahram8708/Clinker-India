@@ -38,40 +38,65 @@
     {% endif %}
 
     <p class="sidebar-section mt-3">Operations</p>
+    <a class="sidebar-link {{ 'active' if endpoint.startswith('ops.list_workspaces') else '' }}" href="{{ url_for('ops.list_workspaces') }}">
+      <span class="nav-indicator"></span>
+      <i class="bi bi-columns-gap"></i>
+      <span>Workspaces</span>
+    </a>
     <a class="sidebar-link {{ 'active' if endpoint.startswith('ops.network') else '' }}" href="{{ url_for('ops.network') }}">
       <span class="nav-indicator"></span>
       <i class="bi bi-diagram-3"></i>
       <span>Network Control</span>
     </a>
-    <a class="sidebar-link" href="{{ url_for('ops.network') }}#plants">
+    <a class="sidebar-link" href="{{ url_for('ops.network') }}#iugu-types">
       <span class="nav-indicator"></span>
       <i class="bi bi-building"></i>
-      <span>Plants</span>
+      <span>IUGU Types</span>
     </a>
-    <a class="sidebar-link" href="{{ url_for('ops.network') }}#routes">
+    <a class="sidebar-link" href="{{ url_for('ops.network') }}#clinker-demand">
+      <span class="nav-indicator"></span>
+      <i class="bi bi-clipboard-data"></i>
+      <span>Clinker Demand</span>
+    </a>
+    <a class="sidebar-link" href="{{ url_for('ops.network') }}#clinker-capacity">
+      <span class="nav-indicator"></span>
+      <i class="bi bi-speedometer"></i>
+      <span>Capacity</span>
+    </a>
+    <a class="sidebar-link" href="{{ url_for('ops.network') }}#production-cost">
+      <span class="nav-indicator"></span>
+      <i class="bi bi-cash-coin"></i>
+      <span>Production Cost</span>
+    </a>
+    <a class="sidebar-link" href="{{ url_for('ops.network') }}#logistics-iugu">
       <span class="nav-indicator"></span>
       <i class="bi bi-truck"></i>
-      <span>Transport</span>
+      <span>Logistics</span>
     </a>
-    <a class="sidebar-link" href="{{ url_for('ops.network') }}#inventory">
+    <a class="sidebar-link" href="{{ url_for('ops.network') }}#iugu-constraint">
       <span class="nav-indicator"></span>
-      <i class="bi bi-box-seam"></i>
-      <span>Inventory</span>
+      <i class="bi bi-diagram-3"></i>
+      <span>Constraints</span>
     </a>
-    <a class="sidebar-link" href="{{ url_for('ops.network') }}#scenarios">
+    <a class="sidebar-link" href="{{ url_for('ops.network') }}#iugu-opening-stock">
       <span class="nav-indicator"></span>
-      <i class="bi bi-bar-chart"></i>
-      <span>Scenarios / Planning</span>
+      <i class="bi bi-box"></i>
+      <span>Opening Stock</span>
+    </a>
+    <a class="sidebar-link" href="{{ url_for('ops.network') }}#hub-opening-stock">
+      <span class="nav-indicator"></span>
+      <i class="bi bi-diagram-3-fill"></i>
+      <span>Hub Stock</span>
+    </a>
+    <a class="sidebar-link" href="{{ url_for('ops.network') }}#iugu-closing-stock">
+      <span class="nav-indicator"></span>
+      <i class="bi bi-archive"></i>
+      <span>Closing Stock</span>
     </a>
     <a class="sidebar-link" href="{{ url_for('ops.network') }}#optimization">
       <span class="nav-indicator"></span>
       <i class="bi bi-cpu"></i>
-      <span>Optimization Jobs</span>
-    </a>
-    <a class="sidebar-link" href="{{ url_for('ops.network') }}#reports">
-      <span class="nav-indicator"></span>
-      <i class="bi bi-file-earmark-arrow-down"></i>
-      <span>Reports / Exports</span>
+      <span>Optimization</span>
     </a>
 
     <p class="sidebar-section mt-3">Governance</p>

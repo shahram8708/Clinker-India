@@ -102,6 +102,24 @@ class Organization(db.Model):
         return f"<Organization {self.name}>"
 
 
+class Workspace(TenantOwnedMixin, db.Model):
+    __tablename__ = "workspaces"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False)
+    description = db.Column(db.String(255))
+    created_by = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "name", name="uq_workspace_name_per_org"),
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f"<Workspace {self.name}>"
+
+
 class User(UserMixin, TenantOwnedMixin, db.Model):
     __tablename__ = "users"
 
@@ -765,6 +783,285 @@ class Inventory(TenantOwnedMixin, db.Model):
         return f"<Inventory plant={self.plant_id} qty={self.current_inventory}>"
 
 
+class PlantDemand(TenantOwnedMixin, db.Model):
+    __tablename__ = "plant_demands"
+
+    id = db.Column(db.Integer, primary_key=True)
+    plant_id = db.Column(db.Integer, db.ForeignKey("plants.id", ondelete="CASCADE"), nullable=False)
+    time_period = db.Column(db.Integer, nullable=False)
+    demand = db.Column(db.Numeric(12, 2), nullable=False)
+    min_fulfillment_pct = db.Column(db.Numeric(5, 2), nullable=False, default=100)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    plant = db.relationship("Plant")
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "plant_id", "time_period", name="uq_demand_per_plant_period"),
+        CheckConstraint(time_period >= 1, name="ck_demand_period_positive"),
+        CheckConstraint(demand > 0, name="ck_demand_positive"),
+        CheckConstraint(min_fulfillment_pct >= 0, name="ck_min_fulfillment_nonnegative"),
+        CheckConstraint(min_fulfillment_pct <= 100, name="ck_min_fulfillment_max"),
+    )
+
+    @property
+    def min_fraction(self) -> float:
+        pct = float(self.min_fulfillment_pct or 0)
+        return max(min(pct / 100.0, 1.0), 0.0)
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f"<PlantDemand plant={self.plant_id} period={self.time_period} demand={self.demand}>"
+
+
+# New schema tables for multi-sheet clinker inputs
+
+
+class IUGUType(TenantOwnedMixin, db.Model):
+    __tablename__ = "iugu_types"
+
+    id = db.Column(db.Integer, primary_key=True)
+    planning_scenario_id = db.Column(
+        db.Integer,
+        db.ForeignKey("planning_scenarios.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    code = db.Column(db.String(16), nullable=False)
+    plant_type = db.Column(db.String(5), nullable=False)
+    sources_count = db.Column(db.Integer)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "code", "planning_scenario_id", name="uq_iugu_code_per_org_scenario"),
+        CheckConstraint(plant_type.in_(["IU", "GU"]), name="ck_iugu_type"),
+    )
+
+
+class ClinkerDemand(TenantOwnedMixin, db.Model):
+    __tablename__ = "clinker_demands"
+
+    id = db.Column(db.Integer, primary_key=True)
+    planning_scenario_id = db.Column(
+        db.Integer,
+        db.ForeignKey("planning_scenarios.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    plant_code = db.Column(db.String(16), nullable=False)
+    time_period = db.Column(db.Integer, nullable=False)
+    demand_tons = db.Column(db.Numeric(12, 2), nullable=False)
+    min_fulfillment_pct = db.Column(db.Numeric(5, 2), nullable=False, default=100)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "planning_scenario_id", "plant_code", "time_period", name="uq_demand_per_org_scenario_period"
+        ),
+        CheckConstraint(time_period >= 1, name="ck_clinker_demand_period_min"),
+        CheckConstraint(time_period <= 3, name="ck_clinker_demand_period_max"),
+        CheckConstraint(demand_tons > 0, name="ck_clinker_demand_positive"),
+        CheckConstraint(min_fulfillment_pct >= 0, name="ck_clinker_min_fulfillment_nonnegative"),
+        CheckConstraint(min_fulfillment_pct <= 100, name="ck_clinker_min_fulfillment_max"),
+    )
+
+    @property
+    def min_fraction(self) -> float:
+        pct = float(self.min_fulfillment_pct or 0)
+        return max(min(pct / 100.0, 1.0), 0.0)
+
+
+class ClinkerCapacity(TenantOwnedMixin, db.Model):
+    __tablename__ = "clinker_capacities"
+
+    id = db.Column(db.Integer, primary_key=True)
+    planning_scenario_id = db.Column(
+        db.Integer,
+        db.ForeignKey("planning_scenarios.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    plant_code = db.Column(db.String(16), nullable=False)
+    time_period = db.Column(db.Integer, nullable=False)
+    capacity_tons = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "planning_scenario_id", "plant_code", "time_period", name="uq_capacity_per_org_scenario_period"
+        ),
+        CheckConstraint(time_period >= 1, name="ck_capacity_period_min"),
+        CheckConstraint(time_period <= 3, name="ck_capacity_period_max"),
+        CheckConstraint(capacity_tons >= 0, name="ck_capacity_nonnegative"),
+    )
+
+
+class ProductionCost(TenantOwnedMixin, db.Model):
+    __tablename__ = "production_costs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    planning_scenario_id = db.Column(
+        db.Integer,
+        db.ForeignKey("planning_scenarios.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    plant_code = db.Column(db.String(16), nullable=False)
+    time_period = db.Column(db.Integer, nullable=False)
+    cost_per_ton = db.Column(db.Numeric(10, 2), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "planning_scenario_id", "plant_code", "time_period", name="uq_prod_cost_per_org_scenario_period"
+        ),
+        CheckConstraint(time_period >= 1, name="ck_prod_cost_period_min"),
+        CheckConstraint(time_period <= 3, name="ck_prod_cost_period_max"),
+        CheckConstraint(cost_per_ton > 0, name="ck_prod_cost_positive"),
+    )
+
+
+class LogisticsIUGU(TenantOwnedMixin, db.Model):
+    __tablename__ = "logistics_iugu"
+
+    id = db.Column(db.Integer, primary_key=True)
+    planning_scenario_id = db.Column(
+        db.Integer,
+        db.ForeignKey("planning_scenarios.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    from_code = db.Column(db.String(16), nullable=False)
+    to_code = db.Column(db.String(16), nullable=False)
+    transport_code = db.Column(db.String(10), nullable=False)
+    time_period = db.Column(db.Integer, nullable=False)
+    freight_cost = db.Column(db.Numeric(12, 2), nullable=False)
+    handling_cost = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    quantity_multiplier = db.Column(db.Numeric(12, 2), nullable=False, default=1)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "planning_scenario_id",
+            "from_code",
+            "to_code",
+            "transport_code",
+            "time_period",
+            name="uq_logistics_route_per_period",
+        ),
+        CheckConstraint(time_period >= 1, name="ck_logistics_period_min"),
+        CheckConstraint(time_period <= 3, name="ck_logistics_period_max"),
+        CheckConstraint(freight_cost >= 0, name="ck_logistics_freight_nonnegative"),
+        CheckConstraint(handling_cost >= 0, name="ck_logistics_handling_nonnegative"),
+        CheckConstraint(quantity_multiplier > 0, name="ck_logistics_multiplier_positive"),
+    )
+
+
+class IUGUConstraint(TenantOwnedMixin, db.Model):
+    __tablename__ = "iugu_constraints"
+
+    id = db.Column(db.Integer, primary_key=True)
+    planning_scenario_id = db.Column(
+        db.Integer,
+        db.ForeignKey("planning_scenarios.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    from_code = db.Column(db.String(16), nullable=False)
+    transport_code = db.Column(db.String(10))
+    to_code = db.Column(db.String(16))
+    time_period = db.Column(db.Integer, nullable=False)
+    constraint_type = db.Column(db.String(3), nullable=False)
+    value_type = db.Column(db.String(3), nullable=False, default="C")
+    value = db.Column(db.Numeric(12, 2), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "planning_scenario_id",
+            "from_code",
+            "transport_code",
+            "to_code",
+            "time_period",
+            "constraint_type",
+            name="uq_iugu_constraint_unique",
+        ),
+        CheckConstraint(time_period >= 1, name="ck_iugu_constraint_period_min"),
+        CheckConstraint(time_period <= 3, name="ck_iugu_constraint_period_max"),
+        CheckConstraint(value >= 0, name="ck_iugu_constraint_value_nonnegative"),
+        CheckConstraint(constraint_type.in_(["L", "G", "E"]), name="ck_iugu_constraint_type"),
+        CheckConstraint(value_type.in_(["C"]), name="ck_iugu_constraint_value_type"),
+    )
+
+
+class IUGUOpeningStock(TenantOwnedMixin, db.Model):
+    __tablename__ = "iugu_opening_stocks"
+
+    id = db.Column(db.Integer, primary_key=True)
+    planning_scenario_id = db.Column(
+        db.Integer,
+        db.ForeignKey("planning_scenarios.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    plant_code = db.Column(db.String(16), nullable=False)
+    opening_stock = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "planning_scenario_id", "plant_code", name="uq_opening_stock_per_org_scenario"),
+        CheckConstraint(opening_stock >= 0, name="ck_opening_stock_nonnegative"),
+    )
+
+
+class HubOpeningStock(TenantOwnedMixin, db.Model):
+    __tablename__ = "hub_opening_stocks"
+
+    id = db.Column(db.Integer, primary_key=True)
+    planning_scenario_id = db.Column(
+        db.Integer,
+        db.ForeignKey("planning_scenarios.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    from_code = db.Column(db.String(16), nullable=False)
+    to_code = db.Column(db.String(16), nullable=False)
+    opening_stock = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "planning_scenario_id", "from_code", "to_code", name="uq_hub_opening_per_org_scenario"),
+        CheckConstraint(opening_stock >= 0, name="ck_hub_opening_nonnegative"),
+    )
+
+
+class IUGUClosingStock(TenantOwnedMixin, db.Model):
+    __tablename__ = "iugu_closing_stocks"
+
+    id = db.Column(db.Integer, primary_key=True)
+    planning_scenario_id = db.Column(
+        db.Integer,
+        db.ForeignKey("planning_scenarios.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    plant_code = db.Column(db.String(16), nullable=False)
+    time_period = db.Column(db.Integer, nullable=False)
+    min_close_stock = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    max_close_stock = db.Column(db.Numeric(12, 2))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "planning_scenario_id", "plant_code", "time_period", name="uq_closing_stock_per_org_scenario_period"
+        ),
+        CheckConstraint(time_period >= 1, name="ck_closing_stock_period_min"),
+        CheckConstraint(time_period <= 3, name="ck_closing_stock_period_max"),
+        CheckConstraint(min_close_stock >= 0, name="ck_min_close_stock_nonnegative"),
+        CheckConstraint("(max_close_stock IS NULL) OR (max_close_stock >= 0)", name="ck_max_close_stock_nonnegative"),
+    )
+
+
 class PlanningScenario(TenantOwnedMixin, db.Model):
     __tablename__ = "planning_scenarios"
 
@@ -792,6 +1089,28 @@ class PlanningScenario(TenantOwnedMixin, db.Model):
 
     def __repr__(self) -> str:  # pragma: no cover - debug helper
         return f"<Scenario {self.scenario_name} ({self.status})>"
+
+
+class WorkspaceDataset(TenantOwnedMixin, db.Model):
+    __tablename__ = "workspace_datasets"
+
+    id = db.Column(db.Integer, primary_key=True)
+    workspace_id = db.Column(db.Integer, db.ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    planning_scenario_id = db.Column(db.Integer, db.ForeignKey("planning_scenarios.id", ondelete="CASCADE"), nullable=False, unique=True)
+    label = db.Column(db.String(120), nullable=False)
+    notes = db.Column(db.String(255))
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    scenario = db.relationship("PlanningScenario")
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "workspace_id", "label", name="uq_dataset_label_per_workspace"),
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f"<WorkspaceDataset {self.label} workspace={self.workspace_id}>"
 
 
 class OptimizationJob(TenantOwnedMixin, db.Model):

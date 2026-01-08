@@ -1,7 +1,28 @@
 """Forms for clinker supply chain operations."""
 from flask_wtf import FlaskForm
-from wtforms import BooleanField, DateField, DecimalField, IntegerField, SelectField, StringField, SubmitField
+from flask_wtf.file import FileAllowed, FileField, FileRequired
+from wtforms import (
+    BooleanField,
+    DateField,
+    DecimalField,
+    HiddenField,
+    IntegerField,
+    SelectField,
+    SelectMultipleField,
+    StringField,
+    SubmitField,
+    widgets,
+)
 from wtforms.validators import InputRequired, Length, NumberRange, Optional, ValidationError
+
+
+PERIOD_CHOICES = [(1, "1"), (2, "2"), (3, "3")]
+
+
+class WorkspaceForm(FlaskForm):
+    name = StringField("Workspace Name", validators=[InputRequired(), Length(min=2, max=120)])
+    description = StringField("Description", validators=[Optional(), Length(max=255)])
+    submit = SubmitField("Create workspace")
 
 
 class PlantForm(FlaskForm):
@@ -47,6 +68,25 @@ class PlantForm(FlaskForm):
             return
         if field.data is not None and field.data > self.max_inventory_capacity.data:
             raise ValidationError("Safety stock must be below the max inventory capacity.")
+
+
+class PlantDemandForm(FlaskForm):
+    plant_id = SelectField("IUGU Code", coerce=int, validators=[InputRequired()])
+    time_period = SelectField(
+        "Time Period",
+        coerce=int,
+        choices=PERIOD_CHOICES,
+        validators=[InputRequired(), NumberRange(min=1, max=3)],
+        default=1,
+    )
+    demand = DecimalField("Demand (tons)", validators=[InputRequired(), NumberRange(min=0.01)], places=2)
+    min_fulfillment_pct = DecimalField(
+        "Min fulfillment (%)",
+        validators=[Optional(), NumberRange(min=0, max=100)],
+        places=2,
+        default=None,
+    )
+    submit = SubmitField("Save demand")
 
 
 class TransportRouteForm(FlaskForm):
@@ -96,6 +136,7 @@ class ScenarioForm(FlaskForm):
         default="draft",
         validators=[InputRequired()],
     )
+    workspace_id = HiddenField("Workspace ID", validators=[Optional()])
     submit = SubmitField("Save Scenario")
 
 
@@ -119,6 +160,7 @@ class OptimizationRunForm(FlaskForm):
     shortage_penalty = DecimalField("Shortage penalty / unit", validators=[Optional(), NumberRange(min=0)], places=2, default=1000)
     service_level_target = DecimalField("Service level target (0-1)", validators=[Optional(), NumberRange(min=0, max=1)], places=2, default=0.95)
     mark_completed = BooleanField("Mark scenario completed on success", default=False)
+    workspace_id = HiddenField("Workspace ID", validators=[Optional()])
     submit = SubmitField("Run optimization")
 
 
@@ -144,6 +186,16 @@ class CsvExportForm(FlaskForm):
             raise ValidationError("Unsupported export target selected.")
 
 
+class CsvUploadForm(FlaskForm):
+    workspace_id = HiddenField("Workspace ID", validators=[Optional()])
+    dataset_id = HiddenField("Dataset ID", validators=[Optional()])
+    file = FileField(
+        "CSV file",
+        validators=[FileRequired(message="Please choose a CSV file."), FileAllowed(["csv"], "CSV files only.")],
+    )
+    submit = SubmitField("Upload CSV")
+
+
 class PdfReportForm(FlaskForm):
     report_type = SelectField(
         "Report",
@@ -165,6 +217,25 @@ class PdfReportForm(FlaskForm):
     )
     highlight_alerts = BooleanField("Highlight safety alerts", default=True)
     submit = SubmitField("Generate PDF")
+
+
+class OptimizationExportForm(FlaskForm):
+    scenario_id = SelectField("Scenario", coerce=int, validators=[InputRequired()])
+    sections = SelectMultipleField(
+        "Sections",
+        choices=[
+            ("summary", "Summary KPIs"),
+            ("dispatch", "Dispatch plan"),
+            ("production", "Production plan"),
+            ("inventory", "Inventory ledger"),
+        ],
+        default=["summary", "dispatch", "production", "inventory"],
+        option_widget=widgets.CheckboxInput(),
+        widget=widgets.ListWidget(prefix_label=False),
+        validators=[InputRequired()],
+    )
+    submit_csv = SubmitField("Export CSV")
+    submit_pdf = SubmitField("Export PDF")
 
 
 class ActivityLogFilterForm(FlaskForm):
@@ -293,3 +364,134 @@ class NotificationInboxFilterForm(FlaskForm):
     unread_only = BooleanField("Unread only", default=True)
     acknowledge_all = BooleanField("Mark all as read")
     submit = SubmitField("Update Notifications")
+
+
+class IUGUTypeForm(FlaskForm):
+    code = StringField("IUGU Code", validators=[InputRequired(), Length(min=1, max=16)])
+    plant_type = SelectField(
+        "Plant Type",
+        choices=[("IU", "Integrated Unit"), ("GU", "Grinding Unit")],
+        validators=[InputRequired()],
+    )
+    sources_count = IntegerField("Sources count", validators=[Optional(), NumberRange(min=0)])
+    submit = SubmitField("Save IUGU type")
+
+
+class ClinkerDemandInputForm(FlaskForm):
+    plant_code = StringField("IUGU Code", validators=[InputRequired(), Length(min=1, max=16)])
+    time_period = SelectField(
+        "Period",
+        coerce=int,
+        choices=PERIOD_CHOICES,
+        validators=[InputRequired(), NumberRange(min=1, max=3)],
+        default=1,
+    )
+    demand_tons = DecimalField("Demand (tons)", validators=[InputRequired(), NumberRange(min=0.01)], places=2)
+    min_fulfillment_pct = DecimalField(
+        "Min fulfill %",
+        validators=[Optional(), NumberRange(min=0, max=100)],
+        places=2,
+        default=100,
+    )
+    submit = SubmitField("Save demand")
+
+
+class ClinkerCapacityForm(FlaskForm):
+    plant_code = StringField("IUGU Code", validators=[InputRequired(), Length(min=1, max=16)])
+    time_period = SelectField(
+        "Period",
+        coerce=int,
+        choices=PERIOD_CHOICES,
+        validators=[InputRequired(), NumberRange(min=1, max=3)],
+        default=1,
+    )
+    capacity_tons = DecimalField("Capacity (tons)", validators=[InputRequired(), NumberRange(min=0)], places=2)
+    submit = SubmitField("Save capacity")
+
+
+class ProductionCostForm(FlaskForm):
+    plant_code = StringField("IUGU Code", validators=[InputRequired(), Length(min=1, max=16)])
+    time_period = SelectField(
+        "Period",
+        coerce=int,
+        choices=PERIOD_CHOICES,
+        validators=[InputRequired(), NumberRange(min=1, max=3)],
+        default=1,
+    )
+    cost_per_ton = DecimalField("Cost per ton", validators=[InputRequired(), NumberRange(min=0.01)], places=2)
+    submit = SubmitField("Save cost")
+
+
+class LogisticsIUGUForm(FlaskForm):
+    from_code = StringField("From code", validators=[InputRequired(), Length(min=1, max=16)])
+    to_code = StringField("To code", validators=[InputRequired(), Length(min=1, max=16)])
+    transport_code = StringField("Transport code", validators=[InputRequired(), Length(min=1, max=10)])
+    time_period = SelectField(
+        "Period",
+        coerce=int,
+        choices=PERIOD_CHOICES,
+        validators=[InputRequired(), NumberRange(min=1, max=3)],
+        default=1,
+    )
+    freight_cost = DecimalField("Freight cost", validators=[InputRequired(), NumberRange(min=0)], places=2)
+    handling_cost = DecimalField("Handling cost", validators=[Optional(), NumberRange(min=0)], places=2, default=0)
+    quantity_multiplier = DecimalField(
+        "Quantity multiplier",
+        validators=[InputRequired(), NumberRange(min=0.0001)],
+        places=2,
+        default=1,
+    )
+    submit = SubmitField("Save route")
+
+
+class IUGUConstraintForm(FlaskForm):
+    from_code = StringField("From code", validators=[InputRequired(), Length(min=1, max=16)])
+    transport_code = StringField("Transport code", validators=[Optional(), Length(max=10)])
+    to_code = StringField("To code", validators=[Optional(), Length(max=16)])
+    time_period = SelectField(
+        "Period",
+        coerce=int,
+        choices=PERIOD_CHOICES,
+        validators=[InputRequired(), NumberRange(min=1, max=3)],
+        default=1,
+    )
+    constraint_type = SelectField(
+        "Constraint",
+        choices=[("L", "<= (Upper)"), ("G", ">= (Lower)"), ("E", "= (Exact)")],
+        validators=[InputRequired()],
+    )
+    value_type = SelectField(
+        "Value type",
+        choices=[("C", "Capacity")],
+        validators=[InputRequired()],
+        default="C",
+    )
+    value = DecimalField("Value", validators=[InputRequired(), NumberRange(min=0)], places=2)
+    submit = SubmitField("Save constraint")
+
+
+class IUGUOpeningStockForm(FlaskForm):
+    plant_code = StringField("IUGU Code", validators=[InputRequired(), Length(min=1, max=16)])
+    opening_stock = DecimalField("Opening stock", validators=[InputRequired(), NumberRange(min=0)], places=2)
+    submit = SubmitField("Save opening stock")
+
+
+class HubOpeningStockForm(FlaskForm):
+    from_code = StringField("From code", validators=[InputRequired(), Length(min=1, max=16)])
+    to_code = StringField("To code", validators=[InputRequired(), Length(min=1, max=16)])
+    opening_stock = DecimalField("Opening stock", validators=[InputRequired(), NumberRange(min=0)], places=2)
+    submit = SubmitField("Save hub stock")
+
+
+class IUGUClosingStockForm(FlaskForm):
+    plant_code = StringField("IUGU Code", validators=[InputRequired(), Length(min=1, max=16)])
+    time_period = SelectField(
+        "Period",
+        coerce=int,
+        choices=PERIOD_CHOICES,
+        validators=[InputRequired(), NumberRange(min=1, max=3)],
+        default=1,
+    )
+    min_close_stock = DecimalField("Min close", validators=[InputRequired(), NumberRange(min=0)], places=2)
+    max_close_stock = DecimalField("Max close", validators=[Optional(), NumberRange(min=0)], places=2)
+    submit = SubmitField("Save closing stock")

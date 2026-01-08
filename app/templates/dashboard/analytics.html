@@ -11,6 +11,11 @@
   .hero-chip, .role-chip { border-radius: 999px; padding: 0.35rem 0.85rem; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #e5e7eb; font-weight: 600; }
   .hero-title { letter-spacing: -0.02em; }
   .meta-line { color: #cbd5e1; gap: 1.25rem; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 0.8rem; background: rgba(255,255,255,0.06); color: #e2e8f0; border: 1px solid rgba(255,255,255,0.08); }
+  .chip-soft { background: rgba(148,163,184,0.16); color: #e2e8f0; border-color: rgba(255,255,255,0.06); }
+  .chip-info { background: rgba(96,165,250,0.16); color: #bfdbfe; border-color: rgba(96,165,250,0.32); }
+  .chip-warning { background: rgba(251,191,36,0.14); color: #fcd34d; border-color: rgba(251,191,36,0.28); }
+  .surface-card { background: linear-gradient(175deg, rgba(15,23,42,0.95), rgba(15,23,42,0.9)); border: 1px solid rgba(255,255,255,0.05); border-radius: 18px; }
   .glow-stat { background: linear-gradient(160deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border: 1px solid rgba(255,255,255,0.06); border-radius: 16px; padding: 14px; box-shadow: 0 18px 40px rgba(0,0,0,0.28); transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease; height: 100%; }
   .glow-stat:hover { transform: translateY(-4px); border-color: rgba(96,165,250,0.4); box-shadow: 0 24px 50px rgba(0,0,0,0.32); }
   .stat-icon { width: 46px; height: 46px; display: inline-flex; align-items: center; justify-content: center; border-radius: 14px; color: #0b1727; font-size: 1.15rem; border: 1px solid rgba(255,255,255,0.1); }
@@ -18,14 +23,13 @@
   .gradient-blue { background: linear-gradient(135deg, #60a5fa, #3b82f6); }
   .gradient-amber { background: linear-gradient(135deg, #fcd34d, #f59e0b); color: #2b1b04; }
   .gradient-purple { background: linear-gradient(135deg, #a78bfa, #8b5cf6); color: #0e0824; }
+  .gradient-red { background: linear-gradient(135deg, #f87171, #ef4444); color: #2e0707; }
+  .gradient-cyan { background: linear-gradient(135deg, #22d3ee, #06b6d4); color: #042c3c; }
   .stat-value { font-size: 1.45rem; font-weight: 700; letter-spacing: -0.02em; color: #e5e7eb; }
   .stat-sub { color: #94a3b8; font-size: 0.9rem; }
-  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 0.8rem; background: rgba(255,255,255,0.06); color: #e2e8f0; border: 1px solid rgba(255,255,255,0.08); }
-  .chip-soft { background: rgba(148,163,184,0.16); color: #e2e8f0; border-color: rgba(255,255,255,0.06); }
-  .chip-info { background: rgba(96,165,250,0.16); color: #bfdbfe; border-color: rgba(96,165,250,0.32); }
-  .chip-warning { background: rgba(251,191,36,0.14); color: #fcd34d; border-color: rgba(251,191,36,0.28); }
-  .surface-card { background: linear-gradient(175deg, rgba(15,23,42,0.95), rgba(15,23,42,0.9)); border: 1px solid rgba(255,255,255,0.05); border-radius: 18px; }
+  .sparkline { height: 40px; width: 100%; }
   .chart-shell { background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 12px; height: 260px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.03); }
+  .chart-shell.tall { height: 320px; }
   .mini-chart-card { height: 190px; }
   .progress-thin { height: 6px; border-radius: 999px; background: rgba(255,255,255,0.08); overflow: hidden; }
   .tile-row { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 10px; padding: 10px 12px; }
@@ -35,10 +39,33 @@
   .section-heading { display: flex; align-items: center; gap: 0.75rem; }
   .callout-note { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; }
   .chart-shell canvas { width: 100% !important; height: 100% !important; }
-  @media (max-width: 767.98px) { .stat-value { font-size: 1.25rem; } }
+  .heatmap-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+  .heatmap-cell { padding: 10px 6px; border-radius: 10px; text-align: center; font-size: 0.75rem; color: #e2e8f0; background: linear-gradient(135deg, rgba(59,130,246,0.1), rgba(16,185,129,0.1)); border: 1px solid rgba(255,255,255,0.05); }
+  .cohort-table { width: 100%; border-collapse: collapse; }
+  .cohort-table th, .cohort-table td { padding: 10px; border: 1px solid rgba(255,255,255,0.05); font-size: 0.85rem; }
+  .cohort-table th { color: #cbd5e1; font-weight: 600; }
+  .cohort-table td { color: #e5e7eb; }
+  .gradient-pill { height: 6px; border-radius: 999px; background: linear-gradient(90deg, #22d3ee, #3b82f6, #a78bfa); }
+  .shadow-soft { box-shadow: 0 18px 40px rgba(0,0,0,0.25); }
+  .filter-bar { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 10px; display: flex; flex-wrap: wrap; gap: 10px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+  .sparkline-placeholder { height: 36px; background: linear-gradient(90deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02)); border-radius: 10px; }
+  .funnel-steps { display: grid; gap: 10px; }
+  .funnel-bar { position: relative; background: rgba(59,130,246,0.12); border: 1px solid rgba(59,130,246,0.25); border-radius: 12px; padding: 10px 14px; }
+  .funnel-bar .bar-fill { position: absolute; inset: 0; border-radius: 12px; background: linear-gradient(135deg, rgba(59,130,246,0.35), rgba(14,165,233,0.35)); width: var(--fill, 40%); opacity: 0.55; }
+  .funnel-bar .label { position: relative; z-index: 1; display: flex; justify-content: space-between; color: #e5e7eb; font-weight: 600; }
+  .sankey-placeholder { background: radial-gradient(circle at 20% 40%, rgba(59,130,246,0.2), transparent 35%), radial-gradient(circle at 70% 50%, rgba(16,185,129,0.2), transparent 35%), linear-gradient(120deg, rgba(255,255,255,0.04), rgba(255,255,255,0)); border: 1px dashed rgba(255,255,255,0.1); border-radius: 14px; height: 260px; display: grid; place-items: center; color: #9ca3af; }
+  .waterfall-list { display: grid; gap: 10px; }
+  .waterfall-item { display: flex; align-items: center; gap: 10px; }
+  .waterfall-bar { height: 10px; border-radius: 999px; background: rgba(96,165,250,0.2); border: 1px solid rgba(96,165,250,0.35); width: var(--w, 50%); }
+  .geo-map-placeholder { height: 260px; border-radius: 14px; background: linear-gradient(135deg, rgba(34,211,238,0.1), rgba(99,102,241,0.1)); border: 1px dashed rgba(255,255,255,0.12); display: grid; place-items: center; color: #9ca3af; }
+  .divider { height: 1px; background: rgba(255,255,255,0.05); margin: 0.5rem 0; }
+  @media (max-width: 767.98px) { .stat-value { font-size: 1.25rem; } .chart-shell { height: 220px; } }
 </style>
+
 <div class="row g-4 analytics-shell">
   <div class="page-orb"></div>
+
   <div class="col-12">
     <div class="card hero-card border-0 shadow-soft overflow-hidden analytics-hero position-relative">
       <div class="card-body position-relative p-4 p-md-5">
@@ -59,6 +86,7 @@
               <div class="d-flex flex-wrap align-items-center meta-line small">
                 <span class="d-flex align-items-center gap-2"><i class="bi bi-clock-history"></i>Generated {{ now.strftime('%b %d, %Y %H:%M UTC') }}</span>
                 <span class="d-flex align-items-center gap-2"><i class="bi bi-calendar-range"></i>Window starts {{ analytics.window_start }}</span>
+                <span class="d-flex align-items-center gap-2"><i class="bi bi-info-circle"></i>Scope: {{ 'Organization' if current_user.is_org_admin else 'Personal' }}</span>
               </div>
             </div>
             <div class="d-flex flex-wrap gap-2">
@@ -70,72 +98,148 @@
               {% endif %}
             </div>
           </div>
+
+          <div class="filter-bar">
+            <div class="d-flex align-items-center gap-2">
+              <i class="bi bi-funnel"></i>
+              <span class="text-secondary small">Filters</span>
+            </div>
+            <select class="form-select form-select-sm w-auto" aria-label="Date range">
+              <option>Last 7 days</option>
+              <option selected>Last 30 days</option>
+              <option>Last 90 days</option>
+              <option>Year to date</option>
+            </select>
+            <select class="form-select form-select-sm w-auto" aria-label="User scope">
+              <option selected>Organization</option>
+              <option>My activity</option>
+              <option>Admins only</option>
+              <option>Members only</option>
+            </select>
+            <select class="form-select form-select-sm w-auto" aria-label="Segment">
+              <option selected>All segments</option>
+              <option>North</option>
+              <option>South</option>
+              <option>International</option>
+            </select>
+            <div class="ms-auto d-flex flex-wrap gap-2">
+              <span class="badge-soft">Real-time</span>
+              <span class="badge-soft">Forecast-ready</span>
+            </div>
+          </div>
+
           <div class="row g-3 g-lg-4">
-            <div class="col-6 col-lg-3">
+            <div class="col-6 col-xl-2 col-lg-3">
               <div class="glow-stat h-100">
                 <div class="d-flex align-items-center justify-content-between mb-2">
-                  <span class="text-secondary small">Active users</span>
-                  <span class="chip chip-soft"><i class="bi bi-lightning-charge"></i>Live</span>
+                  <span class="text-secondary small">Total users</span>
+                  <span class="chip chip-soft"><i class="bi bi-people"></i></span>
                 </div>
                 <div class="d-flex align-items-center gap-3">
-                  <div class="stat-icon gradient-emerald"><i class="bi bi-people"></i></div>
+                  <div class="stat-icon gradient-emerald"><i class="bi bi-people-fill"></i></div>
+                  <div class="flex-grow-1">
+                    <div class="stat-value mb-0">{{ analytics.kpis.total_users }}</div>
+                    <div class="stat-sub">Growth {{ analytics.kpis.growth_pct }}%</div>
+                  </div>
+                </div>
+                <div class="sparkline-placeholder mt-2"></div>
+              </div>
+            </div>
+            <div class="col-6 col-xl-2 col-lg-3">
+              <div class="glow-stat h-100">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                  <span class="text-secondary small">Active (DAU)</span>
+                  <span class="chip chip-info">Live</span>
+                </div>
+                <div class="d-flex align-items-center gap-3">
+                  <div class="stat-icon gradient-blue"><i class="bi bi-lightning-charge"></i></div>
                   <div class="flex-grow-1">
                     <div class="stat-value mb-0">{{ analytics.kpis.active_users }}</div>
-                    <div class="stat-sub">Pending {{ analytics.kpis.pending_users }}</div>
+                    <div class="stat-sub">MAU {{ analytics.kpis.mau }}</div>
                   </div>
                 </div>
+                <div class="progress progress-thin mt-2"><div class="progress-bar bg-info" style="width: {{ analytics.kpis.engagement_score }}%"></div></div>
               </div>
             </div>
-            <div class="col-6 col-lg-3">
+            <div class="col-6 col-xl-2 col-lg-3">
               <div class="glow-stat h-100">
                 <div class="d-flex align-items-center justify-content-between mb-2">
-                  <span class="text-secondary small">Network assets</span>
-                  <span class="chip chip-info"><i class="bi bi-building"></i>{{ analytics.kpis.plants }} plants</span>
+                  <span class="text-secondary small">Engagement</span>
+                  <span class="chip chip-soft">Score</span>
                 </div>
                 <div class="d-flex align-items-center gap-3">
-                  <div class="stat-icon gradient-blue"><i class="bi bi-diagram-3"></i></div>
+                  <div class="stat-icon gradient-purple"><i class="bi bi-activity"></i></div>
                   <div class="flex-grow-1">
-                    <div class="stat-sub">Routes {{ analytics.kpis.routes }}</div>
-                    <div class="progress progress-thin mt-2"><div class="progress-bar bg-info" style="width: 76%"></div></div>
+                    <div class="stat-value mb-0">{{ analytics.kpis.engagement_score }}</div>
+                    <div class="stat-sub">Churn {{ analytics.kpis.churn_rate }}%</div>
                   </div>
                 </div>
+                <div class="sparkline-placeholder mt-2"></div>
               </div>
             </div>
-            <div class="col-6 col-lg-3">
+            <div class="col-6 col-xl-2 col-lg-3">
               <div class="glow-stat h-100">
                 <div class="d-flex align-items-center justify-content-between mb-2">
-                  <span class="text-secondary small">Inventory coverage</span>
-                  <span class="chip {{ 'chip-info' if analytics.kpis.inventory_alerts == 0 else 'chip-warning' }}"><i class="bi bi-exclamation-triangle"></i>{{ analytics.kpis.inventory_alerts }} alerts</span>
+                  <span class="text-secondary small">Retention</span>
+                  <span class="chip chip-soft">LTV</span>
                 </div>
                 <div class="d-flex align-items-center gap-3">
-                  <div class="stat-icon gradient-amber"><i class="bi bi-box-seam"></i></div>
+                  <div class="stat-icon gradient-amber"><i class="bi bi-arrow-repeat"></i></div>
                   <div class="flex-grow-1">
-                    <div class="stat-sub">Safe vs risk</div>
-                    <div class="progress progress-thin mt-2"><div class="progress-bar bg-warning" style="width: 64%"></div></div>
+                    <div class="stat-value mb-0">{{ analytics.kpis.retention_rate }}%</div>
+                    <div class="stat-sub">MRR {{ analytics.kpis.mrr }}</div>
                   </div>
                 </div>
+                <div class="progress progress-thin mt-2"><div class="progress-bar bg-warning" style="width: {{ analytics.kpis.retention_rate }}%"></div></div>
               </div>
             </div>
-            <div class="col-6 col-lg-3">
+            <div class="col-6 col-xl-2 col-lg-3">
               <div class="glow-stat h-100">
                 <div class="d-flex align-items-center justify-content-between mb-2">
-                  <span class="text-secondary small">Scenario lab</span>
-                  <span class="chip chip-info"><i class="bi bi-cpu"></i>{{ analytics.kpis.scenarios }}</span>
+                  <span class="text-secondary small">System health</span>
+                  <span class="chip chip-soft">SLA</span>
                 </div>
                 <div class="d-flex align-items-center gap-3">
-                  <div class="stat-icon gradient-purple"><i class="bi bi-gear"></i></div>
+                  <div class="stat-icon gradient-cyan"><i class="bi bi-shield-check"></i></div>
                   <div class="flex-grow-1">
-                    <div class="stat-sub">Optimization jobs {{ analytics.kpis.optimization_jobs }}</div>
-                    <div class="progress progress-thin mt-2"><div class="progress-bar bg-primary" style="width: 70%"></div></div>
+                    <div class="stat-value mb-0">{{ analytics.kpis.system_health }}</div>
+                    <div class="stat-sub">Errors {{ analytics.kpis.error_rate }}%</div>
                   </div>
                 </div>
+                <div class="sparkline-placeholder mt-2"></div>
+              </div>
+            </div>
+            <div class="col-6 col-xl-2 col-lg-3">
+              <div class="glow-stat h-100">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                  <span class="text-secondary small">Risk</span>
+                  <span class="chip {{ 'chip-info' if analytics.kpis.inventory_alerts == 0 else 'chip-warning' }}">{{ analytics.kpis.inventory_alerts }} alerts</span>
+                </div>
+                <div class="d-flex align-items-center gap-3">
+                  <div class="stat-icon gradient-red"><i class="bi bi-exclamation-triangle"></i></div>
+                  <div class="flex-grow-1">
+                    <div class="stat-value mb-0">{{ analytics.kpis.risk_score }}</div>
+                    <div class="stat-sub">AI anomalies {{ analytics.kpis.anomalies }}</div>
+                  </div>
+                </div>
+                <div class="sparkline-placeholder mt-2"></div>
               </div>
             </div>
           </div>
+
+          <div class="gradient-pill"></div>
         </div>
       </div>
     </div>
   </div>
+
+  {% set behavior = analytics.behavior if analytics is defined and analytics.behavior is defined else {} %}
+  {% set retention = analytics.retention if analytics is defined and analytics.retention is defined else {} %}
+  {% set comparison = analytics.comparison if analytics is defined and analytics.comparison is defined else {} %}
+  {% set forecast = analytics.forecast if analytics is defined and analytics.forecast is defined else {} %}
+  {% set security = analytics.security if analytics is defined and analytics.security is defined else {} %}
+  {% set distribution = analytics.distribution if analytics is defined and analytics.distribution is defined else {} %}
+  {% set timeline = analytics.timeline if analytics is defined and analytics.timeline is defined else {} %}
 
   <div class="col-12">
     <div class="row g-3 g-lg-4">
@@ -336,6 +440,279 @@
       </div>
     </div>
   </div>
+
+  <div class="col-12">
+    <div class="row g-3 g-lg-4">
+      <div class="col-12 col-xl-8">
+        <div class="card h-100 shadow-soft surface-card">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <div class="section-heading"><span class="section-icon"><i class="bi bi-activity"></i></span><div><p class="text-uppercase text-secondary small mb-1">User activity analytics</p><h2 class="h6 mb-0">Flows & timelines</h2></div></div>
+              <span class="chip chip-info">Behavior</span>
+            </div>
+            <div class="row g-3">
+              <div class="col-12 col-lg-6">
+                <div class="chart-shell tall">
+                  <canvas class="analytics-chart" id="activityAreaChart" role="img" aria-label="Area activity"></canvas>
+                </div>
+              </div>
+              <div class="col-12 col-lg-6">
+                <div class="chart-shell tall">
+                  <canvas class="analytics-chart" id="activityStackedChart" role="img" aria-label="Stacked activity"></canvas>
+                </div>
+              </div>
+            </div>
+            <div class="heatmap-grid mt-3">
+              {% for bucket in analytics.activity.heatmap %}
+                <div class="heatmap-cell" style="opacity: {{ bucket.intensity|default(0.35) }}">{{ bucket.label }}</div>
+              {% else %}
+                {% for i in range(7) %}
+                  <div class="heatmap-cell">T{{ i }}</div>
+                {% endfor %}
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-4">
+        <div class="card h-100 shadow-soft surface-card">
+          <div class="card-body d-flex flex-column gap-3">
+            <div class="d-flex justify-content-between align-items-center">
+              <div class="section-heading"><span class="section-icon"><i class="bi bi-person-check"></i></span><div><p class="text-uppercase text-secondary small mb-1">Role usage</p><h2 class="h6 mb-0">Admin vs Member</h2></div></div>
+              <span class="chip chip-soft">Live split</span>
+            </div>
+            <div class="chart-shell mini-chart-card">
+              <canvas class="analytics-chart" id="roleComparisonChart" role="img" aria-label="Role comparison"></canvas>
+            </div>
+            <div class="chart-shell mini-chart-card">
+              <canvas class="analytics-chart" id="roleRadarChart" role="img" aria-label="Role radar"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="row g-3 g-lg-4">
+      <div class="col-12 col-xl-7">
+        <div class="card h-100 shadow-soft surface-card">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <div class="section-heading"><span class="section-icon"><i class="bi bi-funnel"></i></span><div><p class="text-uppercase text-secondary small mb-1">Behavioral analytics</p><h2 class="h6 mb-0">Funnels & paths</h2></div></div>
+              <span class="chip chip-info">Conversion</span>
+            </div>
+            <div class="funnel-steps">
+              {% for step in behavior.get('funnel', []) %}
+                <div class="funnel-bar" style="--fill: {{ step.conversion|default(0) }}%">
+                  <div class="bar-fill"></div>
+                  <div class="label"><span>{{ step.label }}</span><span>{{ step.conversion }}%</span></div>
+                </div>
+              {% else %}
+                <div class="funnel-bar" style="--fill: 80%"><div class="bar-fill"></div><div class="label"><span>Visited</span><span>80%</span></div></div>
+                <div class="funnel-bar" style="--fill: 60%"><div class="bar-fill"></div><div class="label"><span>Explored</span><span>60%</span></div></div>
+                <div class="funnel-bar" style="--fill: 35%"><div class="bar-fill"></div><div class="label"><span>Converted</span><span>35%</span></div></div>
+              {% endfor %}
+            </div>
+            <div class="sankey-placeholder mt-3">Sankey / path analysis ready for D3/ECharts</div>
+            <div class="waterfall-list mt-3">
+              {% for item in behavior.get('dropoff', []) %}
+                <div class="waterfall-item"><span class="badge text-bg-secondary">{{ item.label }}</span><div class="waterfall-bar" style="--w: {{ item.value }}%"></div><span class="text-secondary small">-{{ item.value }}%</span></div>
+              {% else %}
+                <div class="waterfall-item"><span class="badge text-bg-secondary">Step A</span><div class="waterfall-bar" style="--w: 60%"></div><span class="text-secondary small">-40%</span></div>
+                <div class="waterfall-item"><span class="badge text-bg-secondary">Step B</span><div class="waterfall-bar" style="--w: 40%"></div><span class="text-secondary small">-20%</span></div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-5">
+        <div class="card h-100 shadow-soft surface-card">
+          <div class="card-body d-flex flex-column gap-3">
+            <div class="d-flex justify-content-between align-items-center">
+              <div class="section-heading"><span class="section-icon"><i class="bi bi-speedometer"></i></span><div><p class="text-uppercase text-secondary small mb-1">Performance</p><h2 class="h6 mb-0">API & latency</h2></div></div>
+              <span class="chip chip-soft">Live</span>
+            </div>
+            <div class="chart-shell">
+              <canvas class="analytics-chart" id="performanceChart" role="img" aria-label="Performance"></canvas>
+            </div>
+            <div class="chart-shell">
+              <canvas class="analytics-chart" id="errorChart" role="img" aria-label="Errors"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="row g-3 g-lg-4">
+      <div class="col-12 col-xl-6">
+        <div class="card h-100 shadow-soft surface-card">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <div class="section-heading"><span class="section-icon"><i class="bi bi-magnet"></i></span><div><p class="text-uppercase text-secondary small mb-1">Engagement</p><h2 class="h6 mb-0">Feature usage</h2></div></div>
+              <span class="chip chip-info">Interactions</span>
+            </div>
+            <div class="row g-3">
+              <div class="col-12 col-lg-6">
+                <div class="chart-shell">
+                  <canvas class="analytics-chart" id="featureUsageChart" role="img" aria-label="Feature usage"></canvas>
+                </div>
+              </div>
+              <div class="col-12 col-lg-6">
+                <div class="chart-shell">
+                  <canvas class="analytics-chart" id="engagementDistChart" role="img" aria-label="Engagement distribution"></canvas>
+                </div>
+              </div>
+            </div>
+            <div class="divider"></div>
+            <div class="d-flex flex-wrap gap-2 small text-secondary">
+              <span class="chip chip-soft"><span class="legend-dot" style="background:#3b82f6"></span>Clicks</span>
+              <span class="chip chip-soft"><span class="legend-dot" style="background:#10b981"></span>Scroll depth</span>
+              <span class="chip chip-soft"><span class="legend-dot" style="background:#f59e0b"></span>Time on page</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-6">
+        <div class="card h-100 shadow-soft surface-card">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <div class="section-heading"><span class="section-icon"><i class="bi bi-repeat"></i></span><div><p class="text-uppercase text-secondary small mb-1">Retention & cohorts</p><h2 class="h6 mb-0">Lifecycle</h2></div></div>
+              <span class="chip chip-soft">Cohort</span>
+            </div>
+            <div class="chart-shell">
+              <canvas class="analytics-chart" id="retentionCurveChart" role="img" aria-label="Retention curve"></canvas>
+            </div>
+            <div class="table-responsive mt-3">
+              <table class="cohort-table">
+                <thead><tr><th>Cohort</th><th>Week 1</th><th>Week 2</th><th>Week 3</th><th>Week 4</th></tr></thead>
+                <tbody>
+                  {% for cohort in retention.get('cohorts', []) %}
+                    <tr>
+                      <td>{{ cohort.label }}</td>
+                      {% for value in cohort.values %}
+                        <td>{{ value }}%</td>
+                      {% endfor %}
+                    </tr>
+                  {% else %}
+                    <tr><td>Jan</td><td>86%</td><td>74%</td><td>63%</td><td>55%</td></tr>
+                    <tr><td>Feb</td><td>82%</td><td>71%</td><td>61%</td><td>53%</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="row g-3 g-lg-4">
+      <div class="col-12 col-xl-7">
+        <div class="card h-100 shadow-soft surface-card">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <div class="section-heading"><span class="section-icon"><i class="bi bi-graph-up"></i></span><div><p class="text-uppercase text-secondary small mb-1">Comparative analytics</p><h2 class="h6 mb-0">Benchmarks</h2></div></div>
+              <span class="chip chip-info">MoM / YoY</span>
+            </div>
+            <div class="row g-3">
+              <div class="col-12 col-lg-6">
+                <div class="chart-shell">
+                  <canvas class="analytics-chart" id="comparisonChart" role="img" aria-label="Comparisons"></canvas>
+                </div>
+              </div>
+              <div class="col-12 col-lg-6">
+                <div class="chart-shell">
+                  <canvas class="analytics-chart" id="benchmarkChart" role="img" aria-label="Benchmarks"></canvas>
+                </div>
+              </div>
+            </div>
+            <div class="d-flex flex-wrap gap-2 small text-secondary mt-3">
+              <span class="chip chip-soft">Org vs industry</span>
+              <span class="chip chip-soft">User vs average</span>
+              <span class="chip chip-soft">Region split</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-5">
+        <div class="card h-100 shadow-soft surface-card">
+          <div class="card-body d-flex flex-column gap-3">
+            <div class="d-flex justify-content-between align-items-center">
+              <div class="section-heading"><span class="section-icon"><i class="bi bi-robot"></i></span><div><p class="text-uppercase text-secondary small mb-1">Predictive & AI</p><h2 class="h6 mb-0">Forecasts</h2></div></div>
+              <span class="chip chip-soft">AI-ready</span>
+            </div>
+            <div class="chart-shell">
+              <canvas class="analytics-chart" id="forecastChart" role="img" aria-label="Forecast"></canvas>
+            </div>
+            <div class="chart-shell">
+              <canvas class="analytics-chart" id="anomalyChart" role="img" aria-label="Anomalies"></canvas>
+            </div>
+            <div class="d-flex flex-wrap gap-2 small text-secondary">
+              <span class="chip chip-soft">Prediction bands</span>
+              <span class="chip chip-warning">Risk probability</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="row g-3 g-lg-4">
+      <div class="col-12 col-xl-6">
+        <div class="card h-100 shadow-soft surface-card">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <div class="section-heading"><span class="section-icon"><i class="bi bi-shield-lock"></i></span><div><p class="text-uppercase text-secondary small mb-1">Security</p><h2 class="h6 mb-0">Login & device</h2></div></div>
+              <span class="chip chip-soft">30-day</span>
+            </div>
+            <div class="row g-3">
+              <div class="col-12 col-lg-6">
+                <div class="chart-shell">
+                  <canvas class="analytics-chart" id="loginTimeChart" role="img" aria-label="Login time"></canvas>
+                </div>
+              </div>
+              <div class="col-12 col-lg-6">
+                <div class="chart-shell">
+                  <canvas class="analytics-chart" id="deviceChart" role="img" aria-label="Device"></canvas>
+                </div>
+              </div>
+            </div>
+            <div class="geo-map-placeholder mt-3">Geo map placeholder (ECharts/Mapbox ready)</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-6">
+        <div class="card h-100 shadow-soft surface-card">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <div class="section-heading"><span class="section-icon"><i class="bi bi-scatter-chart"></i></span><div><p class="text-uppercase text-secondary small mb-1">Distribution</p><h2 class="h6 mb-0">Scatter & bubble</h2></div></div>
+              <span class="chip chip-info">Variability</span>
+            </div>
+            <div class="row g-3">
+              <div class="col-12 col-lg-6">
+                <div class="chart-shell">
+                  <canvas class="analytics-chart" id="scatterChart" role="img" aria-label="Scatter"></canvas>
+                </div>
+              </div>
+              <div class="col-12 col-lg-6">
+                <div class="chart-shell">
+                  <canvas class="analytics-chart" id="bubbleChart" role="img" aria-label="Bubble"></canvas>
+                </div>
+              </div>
+            </div>
+            <div class="chart-shell mt-3">
+              <canvas class="analytics-chart" id="timelineChart" role="img" aria-label="Timeline"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}
 
@@ -349,6 +726,46 @@
       if (window.renderAnalyticsDashboard) {
         window.renderAnalyticsDashboard({ data: analyticsData });
       }
+
+      const ctx = (id) => document.getElementById(id)?.getContext('2d');
+      const baseOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#cbd5e1' } } }, scales: { x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } }, y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } } } };
+      const assign = (id, config) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const existing = (typeof Chart.getChart === 'function') ? Chart.getChart(el) : null;
+        if (existing) existing.destroy();
+        const c = el.getContext('2d');
+        if (c) new Chart(c, config);
+      };
+      const colors = ['#3b82f6','#10b981','#f59e0b','#8b5cf6','#22d3ee','#ef4444'];
+
+      assign('userGrowthChart', { type: 'line', data: { labels: analyticsData.people?.dates || ['W1','W2','W3','W4','W5'], datasets: [ { label: 'Admins', data: analyticsData.people?.admins || [5,6,7,8,9], borderColor: colors[0], backgroundColor: 'rgba(59,130,246,0.25)', fill: true, tension: 0.35 }, { label: 'Members', data: analyticsData.people?.members || [12,15,14,18,20], borderColor: colors[1], backgroundColor: 'rgba(16,185,129,0.25)', fill: true, tension: 0.35 } ] }, options: baseOptions });
+      assign('roleChart', { type: 'doughnut', data: { labels: ['Admin','Member','Viewer'], datasets: [{ data: analyticsData.people?.role_mix || [15,65,20], backgroundColor: colors.slice(0,3) }] }, options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { color: '#cbd5e1' } } } } });
+      assign('inviteChart', { type: 'bar', data: { labels: analyticsData.invites?.labels || ['Sent','Accepted','Pending'], datasets: [{ label: 'Invites', data: analyticsData.invites?.values || [120,90,30], backgroundColor: colors[0] }] }, options: baseOptions });
+      assign('inventoryChart', { type: 'bar', data: { labels: analyticsData.operations?.inventory?.labels || ['Plant A','Plant B','Plant C'], datasets: [{ label: 'Coverage %', data: analyticsData.operations?.inventory?.values || [76,64,82], backgroundColor: colors[2] }] }, options: baseOptions });
+      assign('routesChart', { type: 'pie', data: { labels: analyticsData.operations?.routes?.labels || ['Road','Rail','Sea'], datasets: [{ data: analyticsData.operations?.routes?.values || [55,30,15], backgroundColor: colors.slice(0,3) }] }, options: { plugins: { legend: { labels: { color: '#cbd5e1' } } } } });
+      assign('scenarioChart', { type: 'line', data: { labels: analyticsData.operations?.scenarios?.labels || ['S1','S2','S3'], datasets: [{ label: 'Cost', data: analyticsData.operations?.scenarios?.costs || [120,100,140], borderColor: colors[0], backgroundColor: 'rgba(59,130,246,0.2)', fill: true, tension: 0.35 }] }, options: baseOptions });
+      assign('runtimeChart', { type: 'bar', data: { labels: analyticsData.operations?.scenarios?.labels || ['S1','S2','S3'], datasets: [{ label: 'Runtime (s)', data: analyticsData.operations?.scenarios?.runtimes || [8,12,6], backgroundColor: colors[1] }] }, options: baseOptions });
+      assign('activityChart', { type: 'line', data: { labels: analyticsData.activity?.labels || ['D1','D2','D3','D4','D5','D6','D7'], datasets: [{ label: 'Events', data: analyticsData.activity?.values || [50,60,55,70,90,80,95], borderColor: colors[0], backgroundColor: 'rgba(59,130,246,0.25)', fill: true, tension: 0.35 }] }, options: baseOptions });
+      assign('notificationsChart', { type: 'doughnut', data: { labels: analyticsData.notifications?.labels || ['Info','Warning','Critical'], datasets: [{ data: analyticsData.notifications?.values || [60,25,15], backgroundColor: colors.slice(0,3) }] }, options: { plugins: { legend: { position: 'bottom', labels: { color: '#cbd5e1' } } } } });
+      assign('activityAreaChart', { type: 'line', data: { labels: analyticsData.activity?.labels || ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'], datasets: [{ label: 'Sessions', data: analyticsData.activity?.sessions || [120,140,110,160,180,130,170], borderColor: colors[1], backgroundColor: 'rgba(16,185,129,0.25)', fill: true, tension: 0.35 }] }, options: baseOptions });
+      assign('activityStackedChart', { type: 'bar', data: { labels: analyticsData.activity?.labels || ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'], datasets: [ { label: 'Admin', data: analyticsData.activity?.admin || [20,22,24,26,28,20,24], backgroundColor: colors[0], stack: 'role' }, { label: 'Member', data: analyticsData.activity?.member || [80,90,70,110,120,85,115], backgroundColor: colors[1], stack: 'role' } ] }, options: { ...baseOptions, scales: { x: { stacked: true, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } }, y: { stacked: true, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } } } } });
+      assign('roleComparisonChart', { type: 'bar', data: { labels: ['Admin','Member'], datasets: [{ label: 'Actions', data: analyticsData.people?.actions || [320,640], backgroundColor: [colors[0], colors[1]] }] }, options: baseOptions });
+      assign('roleRadarChart', { type: 'radar', data: { labels: ['Create','Edit','Share','Export','Automate'], datasets: [ { label: 'Admin', data: analyticsData.people?.radar?.admin || [90,80,85,70,75], borderColor: colors[0], backgroundColor: 'rgba(59,130,246,0.2)' }, { label: 'Member', data: analyticsData.people?.radar?.member || [70,65,75,60,55], borderColor: colors[1], backgroundColor: 'rgba(16,185,129,0.2)' } ] }, options: { responsive: true, plugins: { legend: { labels: { color: '#cbd5e1' } } }, scales: { r: { angleLines: { color: 'rgba(255,255,255,0.1)' }, grid: { color: 'rgba(255,255,255,0.1)' }, pointLabels: { color: '#cbd5e1' }, ticks: { display: false } } } } });
+      assign('performanceChart', { type: 'line', data: { labels: analyticsData.performance?.labels || ['T1','T2','T3','T4','T5'], datasets: [{ label: 'Latency (ms)', data: analyticsData.performance?.latency || [220,210,240,200,190], borderColor: colors[5], backgroundColor: 'rgba(239,68,68,0.2)', fill: true, tension: 0.35 }] }, options: baseOptions });
+      assign('errorChart', { type: 'bar', data: { labels: analyticsData.performance?.labels || ['T1','T2','T3','T4','T5'], datasets: [{ label: 'Error rate %', data: analyticsData.performance?.errors || [0.8,0.6,0.9,0.4,0.3], backgroundColor: colors[5] }] }, options: baseOptions });
+      assign('featureUsageChart', { type: 'horizontalBar' in Chart.defaults ? 'horizontalBar' : 'bar', data: { labels: analyticsData.engagement?.features?.labels || ['Planner','Simulator','Exports','Alerts'], datasets: [{ label: 'Interactions', data: analyticsData.engagement?.features?.values || [320,280,210,190], backgroundColor: colors } ] }, options: { ...baseOptions, indexAxis: 'y' } });
+      assign('engagementDistChart', { type: 'pie', data: { labels: analyticsData.engagement?.distribution?.labels || ['Low','Medium','High'], datasets: [{ data: analyticsData.engagement?.distribution?.values || [20,50,30], backgroundColor: colors.slice(0,3) }] }, options: { plugins: { legend: { position: 'bottom', labels: { color: '#cbd5e1' } } } } });
+      assign('retentionCurveChart', { type: 'line', data: { labels: ['Week1','Week2','Week3','Week4'], datasets: [{ label: 'Retention', data: analyticsData.retention?.curve || [86,74,63,55], borderColor: colors[0], backgroundColor: 'rgba(59,130,246,0.2)', fill: true, tension: 0.35 }] }, options: baseOptions });
+      assign('comparisonChart', { type: 'bar', data: { labels: analyticsData.comparison?.labels || ['MoM','QoQ','YoY'], datasets: [{ label: 'Org', data: analyticsData.comparison?.org || [12,18,34], backgroundColor: colors[0] }, { label: 'Industry', data: analyticsData.comparison?.industry || [10,14,28], backgroundColor: colors[2] }] }, options: baseOptions });
+      assign('benchmarkChart', { type: 'line', data: { labels: analyticsData.comparison?.labels || ['MoM','QoQ','YoY'], datasets: [{ label: 'User vs Avg', data: analyticsData.comparison?.user || [15,16,18], borderColor: colors[1], backgroundColor: 'rgba(16,185,129,0.2)', fill: true, tension: 0.35 }] }, options: baseOptions });
+      assign('forecastChart', { type: 'line', data: { labels: analyticsData.forecast?.labels || ['Now','+1w','+2w','+3w','+4w'], datasets: [{ label: 'Forecast', data: analyticsData.forecast?.values || [120,130,140,150,165], borderColor: colors[0], backgroundColor: 'rgba(59,130,246,0.15)', fill: true, tension: 0.35, borderDash: [6,4] }] }, options: baseOptions });
+      assign('anomalyChart', { type: 'scatter', data: { datasets: [{ label: 'Anomalies', data: analyticsData.forecast?.anomalies || [{x:1,y:120},{x:3,y:180}], backgroundColor: colors[5], pointRadius: 6 }] }, options: { ...baseOptions, scales: { x: { ticks: { color: '#94a3b8' } }, y: { ticks: { color: '#94a3b8' } } } } });
+      assign('loginTimeChart', { type: 'bar', data: { labels: analyticsData.security?.hours || ['0h','6h','12h','18h','24h'], datasets: [{ label: 'Logins', data: analyticsData.security?.logins || [40,80,120,90,60], backgroundColor: colors[0] }] }, options: baseOptions });
+      assign('deviceChart', { type: 'doughnut', data: { labels: analyticsData.security?.devices?.labels || ['Desktop','Mobile','Tablet'], datasets: [{ data: analyticsData.security?.devices?.values || [65,30,5], backgroundColor: colors.slice(0,3) }] }, options: { plugins: { legend: { position: 'bottom', labels: { color: '#cbd5e1' } } } } });
+      assign('scatterChart', { type: 'scatter', data: { datasets: [{ label: 'Usage vs Errors', data: analyticsData.distribution?.scatter || [{x:20,y:0.2},{x:40,y:0.15},{x:60,y:0.3},{x:80,y:0.1}], backgroundColor: colors[0] }] }, options: baseOptions });
+      assign('bubbleChart', { type: 'bubble', data: { datasets: [{ label: 'Teams', data: analyticsData.distribution?.bubble || [{x:10,y:20,r:6},{x:30,y:25,r:10},{x:50,y:15,r:12}], backgroundColor: 'rgba(59,130,246,0.35)', borderColor: colors[0] }] }, options: baseOptions });
+      assign('timelineChart', { type: 'line', data: { labels: analyticsData.timeline?.labels || ['Day1','Day2','Day3','Day4','Day5'], datasets: [{ label: 'Throughput', data: analyticsData.timeline?.values || [12,14,15,13,17], borderColor: colors[1], backgroundColor: 'rgba(16,185,129,0.2)', fill: true, tension: 0.35 }] }, options: baseOptions });
     });
   </script>
 {% endblock %}

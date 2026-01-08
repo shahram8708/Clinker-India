@@ -1,7 +1,8 @@
 """Supply chain planning + operations blueprint."""
 import csv
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
+import math
 from io import BytesIO, StringIO
 from typing import Iterable
 
@@ -24,52 +25,333 @@ from sqlalchemy.exc import IntegrityError
 from ..extensions import db
 from ..models import (
     ActivityLog,
+    ClinkerCapacity,
+    ClinkerDemand,
     Inventory,
+    HubOpeningStock,
+    IUGUClosingStock,
+    IUGUConstraint,
+    IUGUOpeningStock,
+    IUGUType,
+    LogisticsIUGU,
     Notification,
+    Organization,
+    Plant,
+    PlantDemand,
+    ProductionCost,
+    PlanningScenario,
+    TransportRoute,
+    Workspace,
+    WorkspaceDataset,
     OptimizationJob,
     OptimizationResult,
-    Organization,
-    PlanningScenario,
-    Plant,
-    TransportRoute,
 )
-from ..tenant.utils import active_org_id, admin_required, get_tenant_record_or_404, tenant_required
+from ..tenant.utils import admin_required, tenant_required, get_tenant_record_or_404
 from .forms import (
-    ActivityLogFilterForm,
-    CsvExportForm,
-    InventoryFilterForm,
-    InventoryUpdateForm,
-    NotificationInboxFilterForm,
-    OptimizationRunForm,
-    PdfReportForm,
-    PlantFilterForm,
+    WorkspaceForm,
     PlantForm,
-    ScenarioForm,
-    TransportFilterForm,
+    PlantDemandForm,
     TransportRouteForm,
+    InventoryUpdateForm,
+    ScenarioForm,
+    OptimizationRunForm,
+    CsvExportForm,
+    PdfReportForm,
+    OptimizationExportForm,
+    NotificationInboxFilterForm,
+    IUGUTypeForm,
+    ClinkerDemandInputForm,
+    ClinkerCapacityForm,
+    LogisticsIUGUForm,
+    IUGUConstraintForm,
+    IUGUOpeningStockForm,
+    IUGUClosingStockForm,
+    HubOpeningStockForm,
+    ProductionCostForm,
+    CsvUploadForm,
 )
 from ..optimization.engine import OptimizationEngine, OptimizationRequest
-from ..optimization.exceptions import OptimizationError, ValidationError
 
-ops_bp = Blueprint("ops", __name__, template_folder="../templates/operations")
 
-SAFE_EXPORT_DATASETS = {"plants", "transport_routes", "inventory", "scenarios"}
+ops_bp = Blueprint("ops", __name__, url_prefix="/operations")
+
+
+SAFE_EXPORT_DATASETS = {"plants", "transport_routes", "inventory"}
+
+
+CSV_SCHEMAS = {
+    "clinker_demand": ["IUGU CODE", "TIME PERIOD", "DEMAND", "MIN FULFILLMENT (%)"],
+    "clinker_capacity": ["IU CODE", "TIME PERIOD", "CAPACITY"],
+    "production_cost": ["IU CODE", "TIME PERIOD", "PRODUCTION COST"],
+    "logistics_iugu": [
+        "FROM IU CODE",
+        "TO IUGU CODE",
+        "TRANSPORT CODE",
+        "TIME PERIOD",
+        "FREIGHT COST",
+        "HANDLING COST",
+        "QUANTITY MULTIPLIER",
+    ],
+    "iugu_constraint": [
+        "IU CODE",
+        "TRANSPORT CODE",
+        "IUGU CODE",
+        "TIME PERIOD",
+        "BOUND TYPEID",
+        "VALUE TYPEID",
+        "Value",
+    ],
+    "iugu_opening": ["IUGU CODE", "OPENING STOCK"],
+    "hub_opening": ["IU", "IUGU", "Opening Stock"],
+    "iugu_closing": ["IUGU CODE", "TIME PERIOD", "MIN CLOSE STOCK", "MAX CLOSE STOCK"],
+    "iugu_type": ["IUGU CODE", "PLANT TYPE", "# Source"],
+}
 
 
 def _org_id() -> int:
-    org_id = active_org_id()
+    org_id = session.get("org_id") or getattr(current_user, "organization_id", None)
     if org_id is None:
         abort(403)
-    if current_user.is_authenticated:
-        if getattr(current_user, "organization_id", None) not in (None, org_id):
-            abort(403)
     return org_id
 
 
-def _safe_org_slug(org: Organization | None) -> str:
-    if org is None or not org.name:
-        return "org"
-    return org.name.lower().replace(" ", "-")
+def _safe_org_slug(org: Organization) -> str:
+    return (org.name or "org").lower().replace(" ", "-")
+
+
+def _workspace_query(org_id: int):
+    return Workspace.for_org(org_id).order_by(Workspace.created_at.desc())
+
+
+def _unique_scenario_name(org_id: int, base: str) -> str:
+    candidate = base
+    suffix = 2
+    while PlanningScenario.for_org(org_id).filter_by(scenario_name=candidate).first():
+        candidate = f"{base} ({suffix})"
+        suffix += 1
+    return candidate
+
+
+def _unique_workspace_name(org_id: int, base: str) -> str:
+    candidate = base
+    suffix = 2
+    while Workspace.for_org(org_id).filter_by(name=candidate).first():
+        candidate = f"{base} ({suffix})"
+        suffix += 1
+    return candidate
+
+
+def _unique_dataset_label(org_id: int, workspace_id: int, base: str) -> str:
+    candidate = base
+    suffix = 2
+    while (
+        WorkspaceDataset.for_org(org_id)
+        .filter_by(workspace_id=workspace_id, label=candidate)
+        .first()
+    ):
+        candidate = f"{base} ({suffix})"
+        suffix += 1
+    return candidate
+
+
+def _bootstrap_default_workspace(org_id: int, user_id: int | None):
+    workspace = Workspace(
+        organization_id=org_id,
+        name=_unique_workspace_name(org_id, "Default Workspace"),
+        description="Auto-created",
+        created_by=user_id,
+    )
+    scenario = PlanningScenario(
+        organization_id=org_id,
+        scenario_name=_unique_scenario_name(org_id, "Default dataset"),
+        periods=3,
+        status="draft",
+    )
+    db.session.add_all([workspace, scenario])
+    db.session.flush()
+    dataset = WorkspaceDataset(
+        organization_id=org_id,
+        workspace_id=workspace.id,
+        planning_scenario_id=scenario.id,
+        label="v1",
+        notes="Bootstrap dataset",
+        created_by=user_id,
+        is_active=True,
+    )
+    db.session.add(dataset)
+    db.session.commit()
+    return workspace, dataset
+
+
+def _resolve_workspace(org_id: int, workspace_id: int | None, user_id: int | None) -> Workspace:
+    workspace = None
+    if workspace_id is not None:
+        workspace = _workspace_query(org_id).filter_by(id=workspace_id).first()
+    if workspace is None:
+        workspace = _workspace_query(org_id).first()
+    if workspace is None:
+        workspace, _ = _bootstrap_default_workspace(org_id, user_id)
+    else:
+        # Ensure the workspace has at least one dataset and a linked scenario; create if missing.
+        dataset = WorkspaceDataset.for_org(org_id).filter_by(workspace_id=workspace.id).first()
+        if dataset is None:
+            scenario_name = _unique_scenario_name(org_id, f"{workspace.name} dataset")
+            scenario = PlanningScenario(
+                organization_id=org_id,
+                scenario_name=scenario_name,
+                periods=3,
+                status="draft",
+            )
+            db.session.add(scenario)
+            db.session.flush()
+            dataset = WorkspaceDataset(
+                organization_id=org_id,
+                workspace_id=workspace.id,
+                planning_scenario_id=scenario.id,
+                label="v1",
+                notes="Auto-created dataset",
+                created_by=user_id,
+                is_active=True,
+            )
+            db.session.add(dataset)
+            db.session.commit()
+    return workspace
+
+
+@ops_bp.route("/scenarios", methods=["POST"])
+@login_required
+@tenant_required
+def create_scenario():
+    org_id = _org_id()
+    form = ScenarioForm()
+    workspace = None
+    workspace_ctx = request.form.get("workspace_id")
+    if workspace_ctx:
+        try:
+            workspace = _resolve_workspace(org_id, int(workspace_ctx), getattr(current_user, "id", None))
+        except ValueError:  # pragma: no cover - guard
+            abort(400)
+
+    if form.validate_on_submit():
+        existing = PlanningScenario.for_org(org_id).filter_by(scenario_name=form.scenario_name.data.strip()).first()
+        if existing:
+            flash("A scenario with that name already exists.", "warning")
+            anchor = "optimization" if workspace else "scenarios"
+            return redirect(url_for("ops.network", workspace_id=workspace.id if workspace else None, _anchor=anchor))
+
+        desired_status = form.status.data
+        scenario = PlanningScenario(
+            organization_id=org_id,
+            scenario_name=form.scenario_name.data.strip(),
+            periods=form.periods.data,
+            status=desired_status,
+        )
+
+        if desired_status in {"executed", "completed"}:
+            scenario.mark_executed(_estimate_cost(org_id, scenario.periods), {"periods": scenario.periods})
+            if desired_status == "completed":
+                scenario.mark_completed()
+
+        db.session.add(scenario)
+        db.session.flush()
+        if workspace:
+            WorkspaceDataset.for_org(org_id).filter_by(workspace_id=workspace.id).update({"is_active": False})
+            dataset = WorkspaceDataset(
+                organization_id=org_id,
+                workspace_id=workspace.id,
+                planning_scenario_id=scenario.id,
+                label=_unique_dataset_label(org_id, workspace.id, form.scenario_name.data.strip()),
+                notes="Workspace dataset",
+                created_by=getattr(current_user, "id", None),
+                is_active=True,
+            )
+            db.session.add(dataset)
+
+        _log_activity(
+            org_id,
+            current_user.id,
+            "scenario_created",
+            f"Scenario {scenario.scenario_name} created with status {scenario.status}",
+            entity_type="scenario",
+            entity_id=scenario.id,
+            details={"status": scenario.status, "periods": scenario.periods},
+        )
+        db.session.commit()
+        flash("Scenario created.", "success")
+    else:
+        flash("Please review the scenario fields.", "danger")
+
+    anchor = "optimization" if workspace else "scenarios"
+    return redirect(url_for("ops.network", workspace_id=workspace.id if workspace else None, _anchor=anchor))
+
+
+
+
+def _resolve_dataset(workspace: Workspace, dataset_id: int | None, user_id: int | None) -> WorkspaceDataset:
+    datasets = WorkspaceDataset.for_org(workspace.organization_id).filter_by(workspace_id=workspace.id)
+    dataset = None
+
+    if dataset_id is not None:
+        dataset = datasets.filter_by(id=dataset_id).first()
+        # If the requested dataset does not belong to this workspace, ignore it and fall back.
+        if dataset is not None and dataset.workspace_id != workspace.id:
+            dataset = None
+
+    if dataset is None:
+        dataset = datasets.filter_by(is_active=True).order_by(WorkspaceDataset.created_at.desc()).first()
+
+    if dataset is None:
+        # No dataset for this workspace; create a fresh one with a unique label.
+        scenario_name = _unique_scenario_name(workspace.organization_id, f"{workspace.name} dataset")
+        scenario = PlanningScenario(
+            organization_id=workspace.organization_id,
+            scenario_name=scenario_name,
+            periods=3,
+            status="draft",
+        )
+        db.session.add(scenario)
+        db.session.flush()
+        dataset = WorkspaceDataset(
+            organization_id=workspace.organization_id,
+            workspace_id=workspace.id,
+            planning_scenario_id=scenario.id,
+            label=_unique_dataset_label(workspace.organization_id, workspace.id, "v1"),
+            notes="Auto-created dataset",
+            created_by=user_id,
+            is_active=True,
+        )
+        db.session.add(dataset)
+        db.session.commit()
+
+    return dataset
+
+
+def _dataset_scenario_ids(org_id: int, workspace_id: int) -> list[int]:
+    datasets = WorkspaceDataset.for_org(org_id).filter_by(workspace_id=workspace_id).all()
+    return [ds.planning_scenario_id for ds in datasets if ds.planning_scenario_id]
+
+
+def _dataset_context_from_request() -> tuple[Workspace, WorkspaceDataset]:
+    org_id = _org_id()
+    workspace_raw = request.form.get("workspace_id") or request.args.get("workspace_id") or session.get("active_workspace_id")
+    dataset_raw = request.form.get("dataset_id") or request.args.get("dataset_id") or session.get("active_dataset_id")
+
+    try:
+        workspace_id = int(workspace_raw) if workspace_raw is not None else None
+    except ValueError:  # pragma: no cover - guard
+        abort(400)
+
+    try:
+        dataset_id = int(dataset_raw) if dataset_raw is not None else None
+    except ValueError:  # pragma: no cover - guard
+        abort(400)
+
+    workspace = _resolve_workspace(org_id, workspace_id, getattr(current_user, "id", None))
+    dataset = _resolve_dataset(workspace, dataset_id, getattr(current_user, "id", None))
+
+    session["active_workspace_id"] = workspace.id
+    session["active_dataset_id"] = dataset.id
+    return workspace, dataset
 
 
 def _plant_choices(org_id: int) -> list[tuple[int, str]]:
@@ -77,9 +359,23 @@ def _plant_choices(org_id: int) -> list[tuple[int, str]]:
     return [(p.id, f"{p.plant_name} ({'IU' if p.plant_type == 'IU' else 'GU'})") for p in plants]
 
 
-def _scenario_choices(org_id: int) -> list[tuple[int, str]]:
-    scenarios = PlanningScenario.for_org(org_id).order_by(PlanningScenario.created_at.desc()).all()
-    return [(s.id, f"{s.scenario_name} ({s.periods}p)") for s in scenarios]
+def _scenario_choices(org_id: int, workspace_id: int | None = None, dataset_id: int | None = None) -> list[tuple[int, str]]:
+    scenarios = PlanningScenario.for_org(org_id).order_by(PlanningScenario.created_at.desc())
+
+    # If a specific dataset is provided, lock selection to its scenario only.
+    if dataset_id is not None:
+        ds = WorkspaceDataset.for_org(org_id).filter_by(id=dataset_id).first()
+        if not ds:
+            return []
+        scenarios = scenarios.filter(PlanningScenario.id == ds.planning_scenario_id)
+    elif workspace_id is not None:
+        scenario_ids = _dataset_scenario_ids(org_id, workspace_id)
+        if scenario_ids:
+            scenarios = scenarios.filter(PlanningScenario.id.in_(scenario_ids))
+        else:
+            return []
+
+    return [(s.id, f"{s.scenario_name} ({s.periods}p)") for s in scenarios.all()]
 
 
 def _estimate_cost(org_id: int, periods: int) -> float:
@@ -146,126 +442,324 @@ def _csv_response(filename: str, headers: Iterable[str], rows: Iterable[Iterable
     )
 
 
-@ops_bp.route("/network")
+def _paginate(query, page: int, per_page: int = 5):
+    total = query.count()
+    pages = int(math.ceil(total / per_page)) if total else 0
+    page = max(1, min(page, pages or 1))
+    items = query.limit(per_page).offset((page - 1) * per_page).all()
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "pages": pages,
+        "has_prev": page > 1,
+        "has_next": page < (pages or 1),
+        "prev_page": page - 1 if page > 1 else None,
+        "next_page": page + 1 if page < (pages or 1) else None,
+    }
+
+
+def _read_csv_rows(upload_file, expected_headers: list[str]) -> list[tuple[int, dict[str, str]]]:
+    if upload_file is None:
+        raise ValueError("Please choose a CSV file to upload.")
+
+    try:
+        content = upload_file.stream.read().decode("utf-8-sig")
+    except Exception as exc:  # pragma: no cover - IO guard
+        raise ValueError("Could not read CSV file.") from exc
+    finally:
+        upload_file.stream.seek(0)
+
+    reader = csv.DictReader(StringIO(content))
+    headers = [h.strip() if h else "" for h in (reader.fieldnames or [])]
+    normalized_expected = [h.strip() for h in expected_headers]
+    if headers != normalized_expected:
+        raise ValueError(f"CSV header mismatch. Expected: {', '.join(normalized_expected)}")
+
+    rows: list[tuple[int, dict[str, str]]] = []
+    for idx, row in enumerate(reader, start=2):
+        if row is None:
+            continue
+        cleaned = {k.strip(): (v.strip() if isinstance(v, str) else v) for k, v in row.items()} if row else {}
+        if not any((val or "").strip() for val in cleaned.values()):
+            continue
+        rows.append((idx, cleaned))
+    return rows
+
+
+def _to_int(value, label: str) -> int:
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        try:
+            return int(Decimal(str(value).strip()))
+        except (TypeError, ValueError, InvalidOperation) as exc:
+            raise ValueError(f"{label} must be an integer.") from exc
+
+
+def _to_decimal(value, label: str, allow_empty: bool = False) -> Decimal | None:
+    if value is None or str(value).strip() == "":
+        if allow_empty:
+            return None
+        raise ValueError(f"{label} is required.")
+    try:
+        return Decimal(str(value).strip())
+    except (InvalidOperation, ValueError) as exc:
+        raise ValueError(f"{label} must be a number.") from exc
+
+
+@ops_bp.route("/workspaces", methods=["POST"])
 @login_required
 @tenant_required
-def network():
+def create_workspace():
     org_id = _org_id()
+    form = WorkspaceForm()
+    if form.validate_on_submit():
+        workspace_name = _unique_workspace_name(org_id, form.name.data.strip())
+        workspace = Workspace(
+            organization_id=org_id,
+            name=workspace_name,
+            description=form.description.data.strip() if form.description.data else None,
+            created_by=getattr(current_user, "id", None),
+        )
+        scenario = PlanningScenario(
+            organization_id=org_id,
+            scenario_name=_unique_scenario_name(org_id, f"{workspace.name} dataset"),
+            periods=3,
+            status="draft",
+        )
+        db.session.add(workspace)
+        db.session.add(scenario)
+        db.session.flush()
+        dataset = WorkspaceDataset(
+            organization_id=org_id,
+            workspace_id=workspace.id,
+            planning_scenario_id=scenario.id,
+            label="v1",
+            notes="Initial dataset",
+            created_by=getattr(current_user, "id", None),
+            is_active=True,
+        )
+        db.session.add(dataset)
+        db.session.commit()
+        flash("Workspace created.", "success")
+        return redirect(url_for("ops.network", workspace_id=workspace.id))
+
+    flash("Please correct the workspace fields.", "danger")
+    return redirect(request.referrer or url_for("main.dashboard"))
+
+
+@ops_bp.route("/workspaces", methods=["GET"])
+@login_required
+@tenant_required
+def list_workspaces():
+    org_id = _org_id()
+    workspace_form = WorkspaceForm()
+    workspaces = _workspace_query(org_id).all()
+    ids = [w.id for w in workspaces]
+    datasets = (
+        WorkspaceDataset.for_org(org_id)
+        .filter(WorkspaceDataset.workspace_id.in_(ids))
+        .order_by(WorkspaceDataset.created_at.desc())
+        .all()
+        if ids
+        else []
+    )
+    datasets_by_ws: dict[int, list[WorkspaceDataset]] = {}
+    for ds in datasets:
+        datasets_by_ws.setdefault(ds.workspace_id, []).append(ds)
+
+    return render_template(
+        "operations/workspaces.html",
+        workspaces=workspaces,
+        datasets_by_ws=datasets_by_ws,
+        workspace_form=workspace_form,
+    )
+
+
+@ops_bp.route("/workspaces/<int:workspace_id>/datasets/<int:dataset_id>/activate", methods=["POST"])
+@login_required
+@tenant_required
+def activate_workspace_dataset(workspace_id: int, dataset_id: int):
+    org_id = _org_id()
+    workspace = get_tenant_record_or_404(Workspace, workspace_id)
+    dataset = get_tenant_record_or_404(WorkspaceDataset, dataset_id)
+    if dataset.workspace_id != workspace.id or workspace.organization_id != org_id:
+        abort(404)
+
+    WorkspaceDataset.for_org(org_id).filter_by(workspace_id=workspace.id).update({"is_active": False})
+    dataset.is_active = True
+    db.session.add(dataset)
+    db.session.commit()
+    flash("Workspace dataset activated.", "success")
+    return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id))
+
+
+@ops_bp.route("/network", defaults={"workspace_id": None, "dataset_id": None})
+@ops_bp.route("/workspaces/<int:workspace_id>/network", defaults={"dataset_id": None})
+@ops_bp.route("/workspaces/<int:workspace_id>/datasets/<int:dataset_id>/network")
+@login_required
+@tenant_required
+def network(workspace_id: int | None, dataset_id: int | None):
+    org_id = _org_id()
+
+    workspace = _resolve_workspace(org_id, workspace_id, getattr(current_user, "id", None))
+    dataset = _resolve_dataset(workspace, dataset_id, getattr(current_user, "id", None))
+    session["active_workspace_id"] = workspace.id
+    session["active_dataset_id"] = dataset.id
 
     export_form = CsvExportForm()
     pdf_form = PdfReportForm()
     notification_filter_form = NotificationInboxFilterForm()
-    plant_filters_form = PlantFilterForm(request.args, meta={"csrf": False})
-    transport_filters_form = TransportFilterForm(request.args, meta={"csrf": False})
-    inventory_filters_form = InventoryFilterForm(request.args, meta={"csrf": False})
     optimization_form = OptimizationRunForm()
-
-    plant_form = PlantForm()
-    route_form = TransportRouteForm()
-    inventory_form = InventoryUpdateForm()
     scenario_form = ScenarioForm()
-    optimization_form.scenario_id.choices = _scenario_choices(org_id)
+    workspace_form = WorkspaceForm()
+    scenario_form.workspace_id.data = workspace.id
+    optimization_form.scenario_id.choices = _scenario_choices(org_id, workspace.id, dataset.id)
+    optimization_export_form = OptimizationExportForm()
+    optimization_export_form.scenario_id.choices = _scenario_choices(org_id, workspace.id, dataset.id)
+    optimization_export_form.scenario_id.data = dataset.planning_scenario_id
 
-    plant_form.plant_type.data = plant_form.plant_type.data or "IU"
-    plant_choices = _plant_choices(org_id)
-    route_form.source_plant_id.choices = plant_choices
-    route_form.destination_plant_id.choices = plant_choices
-    inventory_form.plant_id.choices = plant_choices
+    iugu_type_form = IUGUTypeForm()
+    clinker_demand_form = ClinkerDemandInputForm()
+    clinker_capacity_form = ClinkerCapacityForm()
+    production_cost_form = ProductionCostForm()
+    logistics_form = LogisticsIUGUForm()
+    constraint_form = IUGUConstraintForm()
+    iugu_opening_form = IUGUOpeningStockForm()
+    hub_opening_form = HubOpeningStockForm()
+    closing_form = IUGUClosingStockForm()
+    iugu_type_csv_form = CsvUploadForm(prefix="iugu_type_csv")
+    clinker_demand_csv_form = CsvUploadForm(prefix="clinker_demand_csv")
+    clinker_capacity_csv_form = CsvUploadForm(prefix="clinker_capacity_csv")
+    production_cost_csv_form = CsvUploadForm(prefix="production_cost_csv")
+    logistics_csv_form = CsvUploadForm(prefix="logistics_csv")
+    constraint_csv_form = CsvUploadForm(prefix="constraint_csv")
+    iugu_opening_csv_form = CsvUploadForm(prefix="iugu_opening_csv")
+    hub_opening_csv_form = CsvUploadForm(prefix="hub_opening_csv")
+    closing_csv_form = CsvUploadForm(prefix="closing_csv")
 
-    plant_query = Plant.for_org(org_id)
-    if plant_filters_form.validate():
-        if plant_filters_form.plant_type.data in {"IU", "GU"}:
-            plant_query = plant_query.filter_by(plant_type=plant_filters_form.plant_type.data)
-        if plant_filters_form.status.data in {"active", "disabled"}:
-            plant_query = plant_query.filter_by(status=plant_filters_form.status.data)
-        if plant_filters_form.region.data:
-            like = f"%{plant_filters_form.region.data.lower()}%"
-            plant_query = plant_query.filter(func.lower(Plant.location).like(like))
-        if plant_filters_form.search.data:
-            like = f"%{plant_filters_form.search.data.lower()}%"
-            plant_query = plant_query.filter(func.lower(Plant.plant_name).like(like))
+    for csv_form in (
+        iugu_type_csv_form,
+        clinker_demand_csv_form,
+        clinker_capacity_csv_form,
+        production_cost_csv_form,
+        logistics_csv_form,
+        constraint_csv_form,
+        iugu_opening_csv_form,
+        hub_opening_csv_form,
+        closing_csv_form,
+    ):
+        csv_form.workspace_id.data = workspace.id
+        csv_form.dataset_id.data = dataset.id
 
-    page = max(int(request.args.get("page", 1) or 1), 1)
-    plants = plant_query.order_by(Plant.created_at.desc()).paginate(page=page, per_page=10, error_out=False)
+    scenario_id = dataset.planning_scenario_id
 
-    route_query = TransportRoute.for_org(org_id)
-    if transport_filters_form.validate():
-        if transport_filters_form.mode.data in {"Road", "Rail", "Sea"}:
-            route_query = route_query.filter_by(mode=transport_filters_form.mode.data)
-        if transport_filters_form.status.data in {"active", "disabled"}:
-            route_query = route_query.filter_by(status=transport_filters_form.status.data)
-        if transport_filters_form.min_cost.data is not None:
-            route_query = route_query.filter(TransportRoute.cost_per_trip >= transport_filters_form.min_cost.data)
-        if transport_filters_form.max_cost.data is not None:
-            route_query = route_query.filter(TransportRoute.cost_per_trip <= transport_filters_form.max_cost.data)
-        if transport_filters_form.active_only.data:
-            route_query = route_query.filter_by(status="active")
-    routes = route_query.order_by(TransportRoute.created_at.desc()).all()
+    iugu_page = max(1, int(request.args.get("iugu_page", 1) or 1))
+    demand_page = max(1, int(request.args.get("demand_page", 1) or 1))
+    capacity_page = max(1, int(request.args.get("capacity_page", 1) or 1))
+    prod_page = max(1, int(request.args.get("prod_page", 1) or 1))
+    logistics_page = max(1, int(request.args.get("logistics_page", 1) or 1))
+    constraint_page = max(1, int(request.args.get("constraint_page", 1) or 1))
+    opening_page = max(1, int(request.args.get("opening_page", 1) or 1))
+    hub_opening_page = max(1, int(request.args.get("hub_opening_page", 1) or 1))
+    closing_page = max(1, int(request.args.get("closing_page", 1) or 1))
 
-    inventories = (
-        Inventory.for_org(org_id)
-        .join(Plant)
-        .order_by(Plant.plant_name)
-        .all()
+    iugu_types_page = _paginate(
+        IUGUType.for_org(org_id)
+        .filter_by(planning_scenario_id=scenario_id)
+        .order_by(IUGUType.created_at.desc(), IUGUType.id.desc()),
+        iugu_page,
     )
-    if inventory_filters_form.validate():
-        if inventory_filters_form.below_safety_only.data:
-            inventories = [inv for inv in inventories if inv.below_safety]
-        if inventory_filters_form.critical_only.data:
-            inventories = [inv for inv in inventories if inv.below_safety and float(inv.current_inventory) == 0]
-        if inventory_filters_form.sort_by.data == "level_high":
-            inventories = sorted(inventories, key=lambda inv: float(inv.current_inventory), reverse=True)
-        elif inventory_filters_form.sort_by.data == "level_low":
-            inventories = sorted(inventories, key=lambda inv: float(inv.current_inventory))
-    inventory_alerts = [inv for inv in inventories if inv.below_safety]
+    clinker_demands_page = _paginate(
+        ClinkerDemand.for_org(org_id)
+        .filter_by(planning_scenario_id=scenario_id)
+        .order_by(ClinkerDemand.created_at.desc(), ClinkerDemand.id.desc()),
+        demand_page,
+    )
+    clinker_capacities_page = _paginate(
+        ClinkerCapacity.for_org(org_id)
+        .filter_by(planning_scenario_id=scenario_id)
+        .order_by(ClinkerCapacity.created_at.desc(), ClinkerCapacity.id.desc()),
+        capacity_page,
+    )
+    production_costs_page = _paginate(
+        ProductionCost.for_org(org_id)
+        .filter_by(planning_scenario_id=scenario_id)
+        .order_by(ProductionCost.created_at.desc(), ProductionCost.id.desc()),
+        prod_page,
+    )
+    logistics_records_page = _paginate(
+        LogisticsIUGU.for_org(org_id)
+        .filter_by(planning_scenario_id=scenario_id)
+        .order_by(LogisticsIUGU.created_at.desc(), LogisticsIUGU.id.desc()),
+        logistics_page,
+    )
+    constraint_records_page = _paginate(
+        IUGUConstraint.for_org(org_id)
+        .filter_by(planning_scenario_id=scenario_id)
+        .order_by(IUGUConstraint.created_at.desc(), IUGUConstraint.id.desc()),
+        constraint_page,
+    )
+    iugu_opening_stocks_page = _paginate(
+        IUGUOpeningStock.for_org(org_id)
+        .filter_by(planning_scenario_id=scenario_id)
+        .order_by(IUGUOpeningStock.created_at.desc(), IUGUOpeningStock.id.desc()),
+        opening_page,
+    )
+    hub_opening_stocks_page = _paginate(
+        HubOpeningStock.for_org(org_id)
+        .filter_by(planning_scenario_id=scenario_id)
+        .order_by(HubOpeningStock.created_at.desc(), HubOpeningStock.id.desc()),
+        hub_opening_page,
+    )
+    closing_stocks_page = _paginate(
+        IUGUClosingStock.for_org(org_id)
+        .filter_by(planning_scenario_id=scenario_id)
+        .order_by(IUGUClosingStock.created_at.desc(), IUGUClosingStock.id.desc()),
+        closing_page,
+    )
+
+    iugu_types = iugu_types_page["items"]
+    clinker_demands = clinker_demands_page["items"]
+    clinker_capacities = clinker_capacities_page["items"]
+    production_costs = production_costs_page["items"]
+    logistics_records = logistics_records_page["items"]
+    constraint_records = constraint_records_page["items"]
+    iugu_opening_stocks = iugu_opening_stocks_page["items"]
+    hub_opening_stocks = hub_opening_stocks_page["items"]
+    closing_stocks = closing_stocks_page["items"]
 
     scenarios = (
         PlanningScenario.for_org(org_id)
+        .filter(PlanningScenario.id == scenario_id)
         .order_by(PlanningScenario.created_at.desc())
         .all()
     )
 
     recent_jobs = (
         OptimizationJob.for_org(org_id)
+        .filter_by(scenario_id=scenario_id)
         .order_by(OptimizationJob.id.desc())
         .limit(5)
         .all()
     )
 
-    inventory_edit_forms = {}
-    for inv in inventories:
-        inv_form = InventoryUpdateForm(obj=inv)
-        inv_form.plant_id.choices = plant_choices
-        inv_form.plant_id.data = inv.plant_id
-        inventory_edit_forms[inv.id] = inv_form
-
-    plant_edit_forms = {}
-    for plant in plants.items:
-        plant_form_instance = PlantForm(obj=plant)
-        plant_edit_forms[plant.id] = plant_form_instance
-
-    route_edit_forms = {}
-    for route in routes:
-        route_form_instance = TransportRouteForm(obj=route)
-        route_form_instance.source_plant_id.choices = plant_choices
-        route_form_instance.destination_plant_id.choices = plant_choices
-        route_form_instance.source_plant_id.data = route.source_plant_id
-        route_form_instance.destination_plant_id.data = route.destination_plant_id
-        route_edit_forms[route.id] = route_form_instance
-
-    scenario_edit_forms = {}
-    for scenario in scenarios:
-        scenario_form_instance = ScenarioForm(obj=scenario)
-        scenario_edit_forms[scenario.id] = scenario_form_instance
+    workspace_datasets = (
+        WorkspaceDataset.for_org(org_id)
+        .filter_by(workspace_id=workspace.id)
+        .order_by(WorkspaceDataset.created_at.desc())
+        .all()
+    )
 
     metrics = {
-        "total_plants": Plant.for_org(org_id).count(),
-        "iu_count": Plant.for_org(org_id).filter_by(plant_type="IU").count(),
-        "gu_count": Plant.for_org(org_id).filter_by(plant_type="GU").count(),
-        "active_routes": TransportRoute.for_org(org_id).filter_by(status="active").count(),
-        "inventory_alerts": sum(1 for inv in inventories if inv.below_safety),
-        "safe_inventory": sum(1 for inv in inventories if not inv.below_safety),
-        "total_inventory": len(inventories),
+        "iugu_types": iugu_types_page["total"],
+        "demands": clinker_demands_page["total"],
+        "capacities": clinker_capacities_page["total"],
+        "logistics": logistics_records_page["total"],
+        "constraints": constraint_records_page["total"],
+        "openings": iugu_opening_stocks_page["total"] + hub_opening_stocks_page["total"],
+        "closings": closing_stocks_page["total"],
     }
 
     notifications = (
@@ -275,42 +769,1071 @@ def network():
         .all()
     )
 
+    latest_result = (
+        OptimizationResult.for_org(org_id)
+        .filter_by(scenario_id=scenario_id)
+        .order_by(OptimizationResult.created_at.desc())
+        .first()
+    )
+
     return render_template(
         "operations/network.html",
-        plant_form=plant_form,
-        route_form=route_form,
-        inventory_form=inventory_form,
-        scenario_form=scenario_form,
-        optimization_form=optimization_form,
         export_form=export_form,
         pdf_form=pdf_form,
         notification_filter_form=notification_filter_form,
-        plant_filters_form=plant_filters_form,
-        transport_filters_form=transport_filters_form,
-        inventory_filters_form=inventory_filters_form,
-        plants=plants,
-        routes=routes,
-        inventories=inventories,
-        inventory_alerts=inventory_alerts,
+        optimization_form=optimization_form,
+        scenario_form=scenario_form,
+        iugu_type_form=iugu_type_form,
+        clinker_demand_form=clinker_demand_form,
+        clinker_capacity_form=clinker_capacity_form,
+        production_cost_form=production_cost_form,
+        logistics_form=logistics_form,
+        constraint_form=constraint_form,
+        iugu_opening_form=iugu_opening_form,
+        hub_opening_form=hub_opening_form,
+        closing_form=closing_form,
+        iugu_type_csv_form=iugu_type_csv_form,
+        clinker_demand_csv_form=clinker_demand_csv_form,
+        clinker_capacity_csv_form=clinker_capacity_csv_form,
+        production_cost_csv_form=production_cost_csv_form,
+        logistics_csv_form=logistics_csv_form,
+        constraint_csv_form=constraint_csv_form,
+        iugu_opening_csv_form=iugu_opening_csv_form,
+        hub_opening_csv_form=hub_opening_csv_form,
+        closing_csv_form=closing_csv_form,
+        iugu_types=iugu_types,
+        clinker_demands=clinker_demands,
+        clinker_capacities=clinker_capacities,
+        production_costs=production_costs,
+        logistics_records=logistics_records,
+        constraint_records=constraint_records,
+        iugu_opening_stocks=iugu_opening_stocks,
+        hub_opening_stocks=hub_opening_stocks,
+        closing_stocks=closing_stocks,
+        iugu_types_page=iugu_types_page,
+        clinker_demands_page=clinker_demands_page,
+        clinker_capacities_page=clinker_capacities_page,
+        production_costs_page=production_costs_page,
+        logistics_records_page=logistics_records_page,
+        constraint_records_page=constraint_records_page,
+        iugu_opening_stocks_page=iugu_opening_stocks_page,
+        hub_opening_stocks_page=hub_opening_stocks_page,
+        closing_stocks_page=closing_stocks_page,
         scenarios=scenarios,
         recent_jobs=recent_jobs,
         metrics=metrics,
-        inventory_edit_forms=inventory_edit_forms,
-        plant_edit_forms=plant_edit_forms,
-        route_edit_forms=route_edit_forms,
-        scenario_edit_forms=scenario_edit_forms,
-        filters={
-            "type": plant_filters_form.plant_type.data,
-            "status": plant_filters_form.status.data,
-            "q": plant_filters_form.search.data,
-            "region": plant_filters_form.region.data,
-        },
         notifications=notifications,
+        latest_result=latest_result,
+        workspace=workspace,
+        dataset=dataset,
+        datasets=workspace_datasets,
+        workspace_form=workspace_form,
+        optimization_export_form=optimization_export_form,
     )
 
 
-@ops_bp.route("/plants", methods=["POST"])
+@ops_bp.route("/iugu-types", methods=["POST"])
 @login_required
+@tenant_required
+@admin_required
+def create_iugu_type():
+    workspace, dataset = _dataset_context_from_request()
+    org_id = workspace.organization_id
+    form = IUGUTypeForm()
+    if form.validate_on_submit():
+        record = IUGUType(
+            organization_id=org_id,
+            planning_scenario_id=dataset.planning_scenario_id,
+            code=form.code.data.strip(),
+            plant_type=form.plant_type.data,
+            sources_count=form.sources_count.data,
+        )
+        db.session.add(record)
+        try:
+            db.session.commit()
+            flash("IUGU type saved.", "success")
+        except IntegrityError:
+            db.session.rollback()
+            flash("IUGU code already exists for this organization/scenario.", "warning")
+    else:
+        flash("Please correct the IUGU type inputs.", "danger")
+    return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor="iugu-types"))
+
+
+@ops_bp.route("/clinker-demand", methods=["POST"])
+@login_required
+@tenant_required
+@admin_required
+def create_clinker_demand():
+    workspace, dataset = _dataset_context_from_request()
+    org_id = workspace.organization_id
+    form = ClinkerDemandInputForm()
+    if form.validate_on_submit():
+        record = ClinkerDemand(
+            organization_id=org_id,
+            planning_scenario_id=dataset.planning_scenario_id,
+            plant_code=form.plant_code.data.strip(),
+            time_period=form.time_period.data,
+            demand_tons=form.demand_tons.data,
+            min_fulfillment_pct=form.min_fulfillment_pct.data,
+        )
+        db.session.add(record)
+        try:
+            db.session.commit()
+            flash("Clinker demand saved.", "success")
+        except IntegrityError:
+            db.session.rollback()
+            flash("Demand already exists for this IUGU and period.", "warning")
+    else:
+        flash("Please correct the demand inputs.", "danger")
+    return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor="clinker-demand"))
+
+
+@ops_bp.route("/clinker-capacity", methods=["POST"])
+@login_required
+@tenant_required
+@admin_required
+def create_clinker_capacity():
+    workspace, dataset = _dataset_context_from_request()
+    org_id = workspace.organization_id
+    form = ClinkerCapacityForm()
+    if form.validate_on_submit():
+        record = ClinkerCapacity(
+            organization_id=org_id,
+            planning_scenario_id=dataset.planning_scenario_id,
+            plant_code=form.plant_code.data.strip(),
+            time_period=form.time_period.data,
+            capacity_tons=form.capacity_tons.data,
+        )
+        db.session.add(record)
+        try:
+            db.session.commit()
+            flash("Capacity saved.", "success")
+        except IntegrityError:
+            db.session.rollback()
+            flash("Capacity already exists for this IUGU and period.", "warning")
+    else:
+        flash("Please correct the capacity inputs.", "danger")
+    return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor="clinker-capacity"))
+
+
+@ops_bp.route("/production-cost", methods=["POST"])
+@login_required
+@tenant_required
+@admin_required
+def create_production_cost():
+    workspace, dataset = _dataset_context_from_request()
+    org_id = workspace.organization_id
+    form = ProductionCostForm()
+    if form.validate_on_submit():
+        record = ProductionCost(
+            organization_id=org_id,
+            planning_scenario_id=dataset.planning_scenario_id,
+            plant_code=form.plant_code.data.strip(),
+            time_period=form.time_period.data,
+            cost_per_ton=form.cost_per_ton.data,
+        )
+        db.session.add(record)
+        try:
+            db.session.commit()
+            flash("Production cost saved.", "success")
+        except IntegrityError:
+            db.session.rollback()
+            flash("Cost already exists for this IUGU and period.", "warning")
+    else:
+        flash("Please correct the production cost inputs.", "danger")
+    return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor="production-cost"))
+
+
+@ops_bp.route("/logistics-iugu", methods=["POST"])
+@login_required
+@tenant_required
+@admin_required
+def create_logistics_iugu():
+    workspace, dataset = _dataset_context_from_request()
+    org_id = workspace.organization_id
+    form = LogisticsIUGUForm()
+    if form.validate_on_submit():
+        record = LogisticsIUGU(
+            organization_id=org_id,
+            planning_scenario_id=dataset.planning_scenario_id,
+            from_code=form.from_code.data.strip(),
+            to_code=form.to_code.data.strip(),
+            transport_code=form.transport_code.data.strip(),
+            time_period=form.time_period.data,
+            freight_cost=form.freight_cost.data,
+            handling_cost=form.handling_cost.data or 0,
+            quantity_multiplier=form.quantity_multiplier.data,
+        )
+        db.session.add(record)
+        try:
+            db.session.commit()
+            flash("Logistics lane saved.", "success")
+        except IntegrityError:
+            db.session.rollback()
+            flash("A logistics record already exists for this from/to/period.", "warning")
+    else:
+        flash("Please correct the logistics inputs.", "danger")
+    return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor="logistics-iugu"))
+
+
+@ops_bp.route("/iugu-constraint", methods=["POST"])
+@login_required
+@tenant_required
+@admin_required
+def create_iugu_constraint():
+    workspace, dataset = _dataset_context_from_request()
+    org_id = workspace.organization_id
+    form = IUGUConstraintForm()
+    if form.validate_on_submit():
+        record = IUGUConstraint(
+            organization_id=org_id,
+            planning_scenario_id=dataset.planning_scenario_id,
+            from_code=form.from_code.data.strip(),
+            transport_code=form.transport_code.data.strip() if form.transport_code.data else None,
+            to_code=form.to_code.data.strip() if form.to_code.data else None,
+            time_period=form.time_period.data,
+            constraint_type=form.constraint_type.data,
+            value_type=form.value_type.data,
+            value=form.value.data,
+        )
+        db.session.add(record)
+        try:
+            db.session.commit()
+            flash("Constraint saved.", "success")
+        except IntegrityError:
+            db.session.rollback()
+            flash("A constraint already exists for this key.", "warning")
+    else:
+        flash("Please correct the constraint inputs.", "danger")
+    return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor="iugu-constraint"))
+
+
+@ops_bp.route("/iugu-opening-stock", methods=["POST"])
+@login_required
+@tenant_required
+@admin_required
+def create_iugu_opening_stock():
+    workspace, dataset = _dataset_context_from_request()
+    org_id = workspace.organization_id
+    form = IUGUOpeningStockForm()
+    if form.validate_on_submit():
+        record = IUGUOpeningStock(
+            organization_id=org_id,
+            planning_scenario_id=dataset.planning_scenario_id,
+            plant_code=form.plant_code.data.strip(),
+            opening_stock=form.opening_stock.data,
+        )
+        db.session.add(record)
+        try:
+            db.session.commit()
+            flash("Opening stock saved.", "success")
+        except IntegrityError:
+            db.session.rollback()
+            flash("Opening stock already exists for this IUGU.", "warning")
+    else:
+        flash("Please correct the opening stock inputs.", "danger")
+    return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor="iugu-opening-stock"))
+
+
+@ops_bp.route("/hub-opening-stock", methods=["POST"])
+@login_required
+@tenant_required
+@admin_required
+def create_hub_opening_stock():
+    workspace, dataset = _dataset_context_from_request()
+    org_id = workspace.organization_id
+    form = HubOpeningStockForm()
+    if form.validate_on_submit():
+        record = HubOpeningStock(
+            organization_id=org_id,
+            planning_scenario_id=dataset.planning_scenario_id,
+            from_code=form.from_code.data.strip(),
+            to_code=form.to_code.data.strip(),
+            opening_stock=form.opening_stock.data,
+        )
+        db.session.add(record)
+        try:
+            db.session.commit()
+            flash("Hub opening stock saved.", "success")
+        except IntegrityError:
+            db.session.rollback()
+            flash("Hub opening stock already exists for this lane.", "warning")
+    else:
+        flash("Please correct the hub stock inputs.", "danger")
+    return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor="hub-opening-stock"))
+
+
+@ops_bp.route("/iugu-closing-stock", methods=["POST"])
+@login_required
+@tenant_required
+@admin_required
+def create_iugu_closing_stock():
+    workspace, dataset = _dataset_context_from_request()
+    org_id = workspace.organization_id
+    form = IUGUClosingStockForm()
+    if form.validate_on_submit():
+        record = IUGUClosingStock(
+            organization_id=org_id,
+            planning_scenario_id=dataset.planning_scenario_id,
+            plant_code=form.plant_code.data.strip(),
+            time_period=form.time_period.data,
+            min_close_stock=form.min_close_stock.data,
+            max_close_stock=form.max_close_stock.data,
+        )
+        db.session.add(record)
+        try:
+            db.session.commit()
+            flash("Closing stock saved.", "success")
+        except IntegrityError:
+            db.session.rollback()
+            flash("Closing stock already exists for this IUGU and period.", "warning")
+    else:
+        flash("Please correct the closing stock inputs.", "danger")
+    return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor="iugu-closing-stock"))
+
+
+@ops_bp.route("/iugu-types/upload", methods=["POST"])
+@login_required
+@tenant_required
+@admin_required
+def upload_iugu_type_csv():
+    workspace, dataset = _dataset_context_from_request()
+    org_id = workspace.organization_id
+    form = CsvUploadForm(prefix="iugu_type_csv")
+    anchor = "iugu-types"
+
+    if not form.validate_on_submit():
+        flash("Upload a CSV file for IUGU types.", "danger")
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+    try:
+        rows = _read_csv_rows(form.file.data, CSV_SCHEMAS["iugu_type"])
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+    created, skipped = 0, 0
+    for line_no, row in rows:
+        code = (row.get("IUGU CODE") or "").strip()
+        plant_type = (row.get("PLANT TYPE") or "").strip()
+        sources_raw = row.get("# Source")
+
+        if not code or not plant_type:
+            db.session.rollback()
+            flash(f"Row {line_no}: IUGU code and plant type are required.", "danger")
+            return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+        if plant_type not in {"IU", "GU"}:
+            db.session.rollback()
+            flash(f"Row {line_no}: Plant type must be IU or GU.", "danger")
+            return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+        existing = (
+            IUGUType.for_org(org_id)
+            .filter_by(planning_scenario_id=dataset.planning_scenario_id, code=code)
+            .first()
+        )
+        if existing:
+            skipped += 1
+            continue
+
+        try:
+            sources_count = _to_int(sources_raw, "# Source") if sources_raw not in (None, "") else None
+        except ValueError as exc:
+            db.session.rollback()
+            flash(f"Row {line_no}: {exc}", "danger")
+            return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+        record = IUGUType(
+            organization_id=org_id,
+            planning_scenario_id=dataset.planning_scenario_id,
+            code=code,
+            plant_type=plant_type,
+            sources_count=sources_count,
+        )
+        db.session.add(record)
+        created += 1
+
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        flash("Import failed due to duplicate or invalid IUGU type rows.", "warning")
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+    flash(f"Imported {created} IUGU types (skipped {skipped} duplicates).", "success")
+    return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+
+@ops_bp.route("/clinker-demand/upload", methods=["POST"])
+@login_required
+@tenant_required
+@admin_required
+def upload_clinker_demand_csv():
+    workspace, dataset = _dataset_context_from_request()
+    org_id = workspace.organization_id
+    form = CsvUploadForm(prefix="clinker_demand_csv")
+    anchor = "clinker-demand"
+
+    if not form.validate_on_submit():
+        flash("Upload a CSV file for clinker demand.", "danger")
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+    try:
+        rows = _read_csv_rows(form.file.data, CSV_SCHEMAS["clinker_demand"])
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+    created, skipped = 0, 0
+    for line_no, row in rows:
+        plant_code = (row.get("IUGU CODE") or "").strip()
+        if not plant_code:
+            db.session.rollback()
+            flash(f"Row {line_no}: IUGU code is required.", "danger")
+            return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+        try:
+            period = _to_int(row.get("TIME PERIOD"), "TIME PERIOD")
+            demand_tons = _to_decimal(row.get("DEMAND"), "DEMAND")
+            min_pct = _to_decimal(row.get("MIN FULFILLMENT (%)"), "MIN FULFILLMENT (%)", allow_empty=True)
+        except ValueError as exc:
+            db.session.rollback()
+            flash(f"Row {line_no}: {exc}", "danger")
+            return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+        existing = (
+            ClinkerDemand.for_org(org_id)
+            .filter_by(planning_scenario_id=dataset.planning_scenario_id, plant_code=plant_code, time_period=period)
+            .first()
+        )
+        if existing:
+            skipped += 1
+            continue
+
+        record = ClinkerDemand(
+            organization_id=org_id,
+            planning_scenario_id=dataset.planning_scenario_id,
+            plant_code=plant_code,
+            time_period=period,
+            demand_tons=demand_tons,
+            min_fulfillment_pct=min_pct if min_pct is not None else 100,
+        )
+        db.session.add(record)
+        created += 1
+
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        flash("Import failed due to duplicate clinker demand rows.", "warning")
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+    flash(f"Imported {created} clinker demand rows (skipped {skipped} duplicates).", "success")
+    return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+
+@ops_bp.route("/clinker-capacity/upload", methods=["POST"])
+@login_required
+@tenant_required
+@admin_required
+def upload_clinker_capacity_csv():
+    workspace, dataset = _dataset_context_from_request()
+    org_id = workspace.organization_id
+    form = CsvUploadForm(prefix="clinker_capacity_csv")
+    anchor = "clinker-capacity"
+
+    if not form.validate_on_submit():
+        flash("Upload a CSV file for clinker capacity.", "danger")
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+    try:
+        rows = _read_csv_rows(form.file.data, CSV_SCHEMAS["clinker_capacity"])
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+    created, skipped = 0, 0
+    for line_no, row in rows:
+        plant_code = (row.get("IU CODE") or "").strip()
+        if not plant_code:
+            db.session.rollback()
+            flash(f"Row {line_no}: IU code is required.", "danger")
+            return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+        try:
+            period = _to_int(row.get("TIME PERIOD"), "TIME PERIOD")
+            capacity_tons = _to_decimal(row.get("CAPACITY"), "CAPACITY")
+        except ValueError as exc:
+            db.session.rollback()
+            flash(f"Row {line_no}: {exc}", "danger")
+            return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+        existing = (
+            ClinkerCapacity.for_org(org_id)
+            .filter_by(planning_scenario_id=dataset.planning_scenario_id, plant_code=plant_code, time_period=period)
+            .first()
+        )
+        if existing:
+            skipped += 1
+            continue
+
+        record = ClinkerCapacity(
+            organization_id=org_id,
+            planning_scenario_id=dataset.planning_scenario_id,
+            plant_code=plant_code,
+            time_period=period,
+            capacity_tons=capacity_tons,
+        )
+        db.session.add(record)
+        created += 1
+
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        flash("Import failed due to duplicate clinker capacity rows.", "warning")
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+    flash(f"Imported {created} clinker capacity rows (skipped {skipped} duplicates).", "success")
+    return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+
+@ops_bp.route("/production-cost/upload", methods=["POST"])
+@login_required
+@tenant_required
+@admin_required
+def upload_production_cost_csv():
+    workspace, dataset = _dataset_context_from_request()
+    org_id = workspace.organization_id
+    form = CsvUploadForm(prefix="production_cost_csv")
+    anchor = "production-cost"
+
+    if not form.validate_on_submit():
+        flash("Upload a CSV file for production cost.", "danger")
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+    try:
+        rows = _read_csv_rows(form.file.data, CSV_SCHEMAS["production_cost"])
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+    created, skipped = 0, 0
+    for line_no, row in rows:
+        plant_code = (row.get("IU CODE") or "").strip()
+        if not plant_code:
+            db.session.rollback()
+            flash(f"Row {line_no}: IU code is required.", "danger")
+            return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+        try:
+            period = _to_int(row.get("TIME PERIOD"), "TIME PERIOD")
+            cost_per_ton = _to_decimal(row.get("PRODUCTION COST"), "PRODUCTION COST")
+        except ValueError as exc:
+            db.session.rollback()
+            flash(f"Row {line_no}: {exc}", "danger")
+            return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+        existing = (
+            ProductionCost.for_org(org_id)
+            .filter_by(planning_scenario_id=dataset.planning_scenario_id, plant_code=plant_code, time_period=period)
+            .first()
+        )
+        if existing:
+            skipped += 1
+            continue
+
+        record = ProductionCost(
+            organization_id=org_id,
+            planning_scenario_id=dataset.planning_scenario_id,
+            plant_code=plant_code,
+            time_period=period,
+            cost_per_ton=cost_per_ton,
+        )
+        db.session.add(record)
+        created += 1
+
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        flash("Import failed due to duplicate production cost rows.", "warning")
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+    flash(f"Imported {created} production cost rows (skipped {skipped} duplicates).", "success")
+    return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+
+@ops_bp.route("/logistics-iugu/upload", methods=["POST"])
+@login_required
+@tenant_required
+@admin_required
+def upload_logistics_iugu_csv():
+    workspace, dataset = _dataset_context_from_request()
+    org_id = workspace.organization_id
+    form = CsvUploadForm(prefix="logistics_csv")
+    anchor = "logistics-iugu"
+
+    if not form.validate_on_submit():
+        flash("Upload a CSV file for logistics lanes.", "danger")
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+    try:
+        rows = _read_csv_rows(form.file.data, CSV_SCHEMAS["logistics_iugu"])
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+    created, skipped = 0, 0
+    for line_no, row in rows:
+        from_code = (row.get("FROM IU CODE") or "").strip()
+        to_code = (row.get("TO IUGU CODE") or "").strip()
+        transport_code = (row.get("TRANSPORT CODE") or "").strip()
+        if not from_code or not to_code or not transport_code:
+            db.session.rollback()
+            flash(f"Row {line_no}: From, To, and Transport code are required.", "danger")
+            return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+        try:
+            period = _to_int(row.get("TIME PERIOD"), "TIME PERIOD")
+            freight_cost = _to_decimal(row.get("FREIGHT COST"), "FREIGHT COST")
+            handling_cost = _to_decimal(row.get("HANDLING COST"), "HANDLING COST", allow_empty=True) or 0
+            multiplier = _to_decimal(row.get("QUANTITY MULTIPLIER"), "QUANTITY MULTIPLIER")
+        except ValueError as exc:
+            db.session.rollback()
+            flash(f"Row {line_no}: {exc}", "danger")
+            return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+        existing = (
+            LogisticsIUGU.for_org(org_id)
+            .filter_by(
+                planning_scenario_id=dataset.planning_scenario_id,
+                from_code=from_code,
+                to_code=to_code,
+                transport_code=transport_code,
+                time_period=period,
+            )
+            .first()
+        )
+        if existing:
+            skipped += 1
+            continue
+
+        record = LogisticsIUGU(
+            organization_id=org_id,
+            planning_scenario_id=dataset.planning_scenario_id,
+            from_code=from_code,
+            to_code=to_code,
+            transport_code=transport_code,
+            time_period=period,
+            freight_cost=freight_cost,
+            handling_cost=handling_cost,
+            quantity_multiplier=multiplier,
+        )
+        db.session.add(record)
+        created += 1
+
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        flash("Import failed due to duplicate logistics rows.", "warning")
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+    flash(f"Imported {created} logistics rows (skipped {skipped} duplicates).", "success")
+    return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+
+@ops_bp.route("/iugu-constraint/upload", methods=["POST"])
+@login_required
+@tenant_required
+@admin_required
+def upload_iugu_constraint_csv():
+    workspace, dataset = _dataset_context_from_request()
+    org_id = workspace.organization_id
+    form = CsvUploadForm(prefix="constraint_csv")
+    anchor = "iugu-constraint"
+
+    if not form.validate_on_submit():
+        flash("Upload a CSV file for constraints.", "danger")
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+    try:
+        rows = _read_csv_rows(form.file.data, CSV_SCHEMAS["iugu_constraint"])
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+    created, skipped = 0, 0
+    for line_no, row in rows:
+        from_code = (row.get("IU CODE") or "").strip()
+        transport_code = (row.get("TRANSPORT CODE") or "").strip() or None
+        to_code = (row.get("IUGU CODE") or "").strip() or None
+        if not from_code:
+            db.session.rollback()
+            flash(f"Row {line_no}: IU code is required.", "danger")
+            return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+        try:
+            period = _to_int(row.get("TIME PERIOD"), "TIME PERIOD")
+            constraint_type = (row.get("BOUND TYPEID") or "").strip().upper()
+            value_type = (row.get("VALUE TYPEID") or "").strip().upper()
+            value = _to_decimal(row.get("Value"), "Value")
+        except ValueError as exc:
+            db.session.rollback()
+            flash(f"Row {line_no}: {exc}", "danger")
+            return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+        if constraint_type not in {"L", "G", "E"}:
+            db.session.rollback()
+            flash(f"Row {line_no}: BOUND TYPEID must be L, G, or E.", "danger")
+            return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+        if value_type not in {"C"}:
+            db.session.rollback()
+            flash(f"Row {line_no}: VALUE TYPEID must be C.", "danger")
+            return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+        existing = (
+            IUGUConstraint.for_org(org_id)
+            .filter_by(
+                planning_scenario_id=dataset.planning_scenario_id,
+                from_code=from_code,
+                transport_code=transport_code,
+                to_code=to_code,
+                time_period=period,
+                constraint_type=constraint_type,
+            )
+            .first()
+        )
+        if existing:
+            skipped += 1
+            continue
+
+        record = IUGUConstraint(
+            organization_id=org_id,
+            planning_scenario_id=dataset.planning_scenario_id,
+            from_code=from_code,
+            transport_code=transport_code,
+            to_code=to_code,
+            time_period=period,
+            constraint_type=constraint_type,
+            value_type=value_type,
+            value=value,
+        )
+        db.session.add(record)
+        created += 1
+
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        flash("Import failed due to duplicate constraints.", "warning")
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+    flash(f"Imported {created} constraints (skipped {skipped} duplicates).", "success")
+    return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+
+@ops_bp.route("/iugu-opening-stock/upload", methods=["POST"])
+@login_required
+@tenant_required
+@admin_required
+def upload_iugu_opening_stock_csv():
+    workspace, dataset = _dataset_context_from_request()
+    org_id = workspace.organization_id
+    form = CsvUploadForm(prefix="iugu_opening_csv")
+    anchor = "iugu-opening-stock"
+
+    if not form.validate_on_submit():
+        flash("Upload a CSV file for IUGU opening stock.", "danger")
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+    try:
+        rows = _read_csv_rows(form.file.data, CSV_SCHEMAS["iugu_opening"])
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+    created, skipped = 0, 0
+    for line_no, row in rows:
+        plant_code = (row.get("IUGU CODE") or "").strip()
+        if not plant_code:
+            db.session.rollback()
+            flash(f"Row {line_no}: IUGU code is required.", "danger")
+            return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+        try:
+            opening_stock = _to_decimal(row.get("OPENING STOCK"), "OPENING STOCK")
+        except ValueError as exc:
+            db.session.rollback()
+            flash(f"Row {line_no}: {exc}", "danger")
+            return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+        existing = (
+            IUGUOpeningStock.for_org(org_id)
+            .filter_by(planning_scenario_id=dataset.planning_scenario_id, plant_code=plant_code)
+            .first()
+        )
+        if existing:
+            skipped += 1
+            continue
+
+        record = IUGUOpeningStock(
+            organization_id=org_id,
+            planning_scenario_id=dataset.planning_scenario_id,
+            plant_code=plant_code,
+            opening_stock=opening_stock,
+        )
+        db.session.add(record)
+        created += 1
+
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        flash("Import failed due to duplicate opening stock rows.", "warning")
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+    flash(f"Imported {created} IUGU opening stock rows (skipped {skipped} duplicates).", "success")
+    return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+
+@ops_bp.route("/hub-opening-stock/upload", methods=["POST"])
+@login_required
+@tenant_required
+@admin_required
+def upload_hub_opening_stock_csv():
+    workspace, dataset = _dataset_context_from_request()
+    org_id = workspace.organization_id
+    form = CsvUploadForm(prefix="hub_opening_csv")
+    anchor = "hub-opening-stock"
+
+    if not form.validate_on_submit():
+        flash("Upload a CSV file for hub opening stock.", "danger")
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+    try:
+        rows = _read_csv_rows(form.file.data, CSV_SCHEMAS["hub_opening"])
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+    created, skipped = 0, 0
+    for line_no, row in rows:
+        from_code = (row.get("IU") or "").strip()
+        to_code = (row.get("IUGU") or "").strip()
+        if not from_code or not to_code:
+            db.session.rollback()
+            flash(f"Row {line_no}: IU and IUGU codes are required.", "danger")
+            return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+        try:
+            opening_stock = _to_decimal(row.get("Opening Stock"), "Opening Stock")
+        except ValueError as exc:
+            db.session.rollback()
+            flash(f"Row {line_no}: {exc}", "danger")
+            return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+        existing = (
+            HubOpeningStock.for_org(org_id)
+            .filter_by(
+                planning_scenario_id=dataset.planning_scenario_id,
+                from_code=from_code,
+                to_code=to_code,
+            )
+            .first()
+        )
+        if existing:
+            skipped += 1
+            continue
+
+        record = HubOpeningStock(
+            organization_id=org_id,
+            planning_scenario_id=dataset.planning_scenario_id,
+            from_code=from_code,
+            to_code=to_code,
+            opening_stock=opening_stock,
+        )
+        db.session.add(record)
+        created += 1
+
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        flash("Import failed due to duplicate hub opening stock rows.", "warning")
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+    flash(f"Imported {created} hub opening stock rows (skipped {skipped} duplicates).", "success")
+    return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+
+@ops_bp.route("/iugu-closing-stock/upload", methods=["POST"])
+@login_required
+@tenant_required
+@admin_required
+def upload_iugu_closing_stock_csv():
+    workspace, dataset = _dataset_context_from_request()
+    org_id = workspace.organization_id
+    form = CsvUploadForm(prefix="closing_csv")
+    anchor = "iugu-closing-stock"
+
+    if not form.validate_on_submit():
+        flash("Upload a CSV file for IUGU closing stock targets.", "danger")
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+    try:
+        rows = _read_csv_rows(form.file.data, CSV_SCHEMAS["iugu_closing"])
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+    created, skipped = 0, 0
+    for line_no, row in rows:
+        plant_code = (row.get("IUGU CODE") or "").strip()
+        if not plant_code:
+            db.session.rollback()
+            flash(f"Row {line_no}: IUGU code is required.", "danger")
+            return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+        try:
+            period = _to_int(row.get("TIME PERIOD"), "TIME PERIOD")
+            min_close = _to_decimal(row.get("MIN CLOSE STOCK"), "MIN CLOSE STOCK")
+            max_close = _to_decimal(row.get("MAX CLOSE STOCK"), "MAX CLOSE STOCK", allow_empty=True)
+        except ValueError as exc:
+            db.session.rollback()
+            flash(f"Row {line_no}: {exc}", "danger")
+            return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+        existing = (
+            IUGUClosingStock.for_org(org_id)
+            .filter_by(planning_scenario_id=dataset.planning_scenario_id, plant_code=plant_code, time_period=period)
+            .first()
+        )
+        if existing:
+            skipped += 1
+            continue
+
+        record = IUGUClosingStock(
+            organization_id=org_id,
+            planning_scenario_id=dataset.planning_scenario_id,
+            plant_code=plant_code,
+            time_period=period,
+            min_close_stock=min_close,
+            max_close_stock=max_close,
+        )
+        db.session.add(record)
+        created += 1
+
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        flash("Import failed due to duplicate closing stock rows.", "warning")
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+    flash(f"Imported {created} closing stock rows (skipped {skipped} duplicates).", "success")
+    return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor=anchor))
+
+
+@ops_bp.route("/plant-demands", methods=["POST"])
+@login_required
+@tenant_required
+@admin_required
+def create_plant_demand():
+    org_id = _org_id()
+    form = PlantDemandForm()
+    form.plant_id.choices = _plant_choices(org_id)
+
+    if form.validate_on_submit():
+        plant = Plant.for_org(org_id).filter_by(id=form.plant_id.data).first()
+        if not plant:
+            abort(404)
+
+        existing = (
+            PlantDemand.for_org(org_id)
+            .filter_by(plant_id=plant.id, time_period=form.time_period.data)
+            .first()
+        )
+        if existing:
+            flash("A demand entry for this plant and period already exists.", "warning")
+            return redirect(url_for("ops.network", _anchor="demand"))
+
+        record = PlantDemand(
+            organization_id=org_id,
+            plant_id=plant.id,
+            time_period=form.time_period.data,
+            demand=form.demand.data,
+            min_fulfillment_pct=form.min_fulfillment_pct.data if form.min_fulfillment_pct.data is not None else 100,
+        )
+        db.session.add(record)
+        db.session.flush()
+        _log_activity(
+            org_id,
+            current_user.id,
+            "demand_created",
+            f"Demand for {plant.plant_name} period {record.time_period} created",
+            entity_type="demand",
+            entity_id=record.id,
+            details={"demand": float(record.demand), "min_fulfillment_pct": float(record.min_fulfillment_pct or 0)},
+        )
+        db.session.commit()
+        flash("Demand saved.", "success")
+    else:
+        flash("Please correct the demand inputs and try again.", "danger")
+
+    return redirect(url_for("ops.network", _anchor="demand"))
+
+
+@ops_bp.route("/scenarios/<int:scenario_id>/edit", methods=["POST"])
+@login_required
+@tenant_required
+def edit_scenario(scenario_id: int):
+    org_id = _org_id()
+    scenario = get_tenant_record_or_404(PlanningScenario, scenario_id)
+    form = ScenarioForm()
+
+    if form.validate_on_submit():
+        existing = (
+            PlanningScenario.for_org(org_id)
+            .filter(PlanningScenario.id != scenario.id)
+            .filter_by(scenario_name=form.scenario_name.data.strip())
+            .first()
+        )
+        if existing:
+            flash("A scenario with that name already exists.", "warning")
+            return redirect(url_for("ops.network", _anchor="scenarios"))
+
+        scenario.scenario_name = form.scenario_name.data.strip()
+        scenario.periods = form.periods.data
+        scenario.status = form.status.data
+
+        try:
+            db.session.add(scenario)
+            db.session.flush()
+            _log_activity(
+                org_id,
+                current_user.id,
+                "scenario_updated",
+                f"Scenario {scenario.scenario_name} updated",
+                entity_type="scenario",
+                entity_id=scenario.id,
+                details={"status": scenario.status, "periods": scenario.periods},
+            )
+            db.session.commit()
+            flash("Scenario updated.", "success")
+        except IntegrityError:
+            db.session.rollback()
+            flash("A scenario with that name already exists.", "warning")
+    else:
+        flash("Please review the scenario fields.", "danger")
+
+    return redirect(url_for("ops.network", _anchor="scenarios"))
+
+
+@ops_bp.route("/scenarios/<int:scenario_id>/status", methods=["POST"])
 @tenant_required
 @admin_required
 def create_plant():
@@ -599,96 +2122,6 @@ def update_inventory():
     return redirect(url_for("ops.network", _anchor="inventory"))
 
 
-@ops_bp.route("/scenarios", methods=["POST"])
-@login_required
-@tenant_required
-def create_scenario():
-    org_id = _org_id()
-    form = ScenarioForm()
-    if form.validate_on_submit():
-        existing = PlanningScenario.for_org(org_id).filter_by(scenario_name=form.scenario_name.data.strip()).first()
-        if existing:
-            flash("A scenario with that name already exists.", "warning")
-            return redirect(url_for("ops.network", _anchor="scenarios"))
-
-        desired_status = form.status.data
-        scenario = PlanningScenario(
-            organization_id=org_id,
-            scenario_name=form.scenario_name.data.strip(),
-            periods=form.periods.data,
-            status=desired_status,
-        )
-
-        if desired_status in {"executed", "completed"}:
-            scenario.mark_executed(_estimate_cost(org_id, scenario.periods), {"periods": scenario.periods})
-            if desired_status == "completed":
-                scenario.mark_completed()
-
-        db.session.add(scenario)
-        db.session.flush()
-        _log_activity(
-            org_id,
-            current_user.id,
-            "scenario_created",
-            f"Scenario {scenario.scenario_name} created with status {scenario.status}",
-            entity_type="scenario",
-            entity_id=scenario.id,
-            details={"status": scenario.status, "periods": scenario.periods},
-        )
-        db.session.commit()
-        flash("Scenario created.", "success")
-    else:
-        flash("Please review the scenario fields.", "danger")
-
-    return redirect(url_for("ops.network", _anchor="scenarios"))
-
-
-@ops_bp.route("/scenarios/<int:scenario_id>/edit", methods=["POST"])
-@login_required
-@tenant_required
-def edit_scenario(scenario_id: int):
-    org_id = _org_id()
-    scenario = get_tenant_record_or_404(PlanningScenario, scenario_id)
-    form = ScenarioForm()
-
-    if form.validate_on_submit():
-        existing = (
-            PlanningScenario.for_org(org_id)
-            .filter(PlanningScenario.id != scenario.id)
-            .filter_by(scenario_name=form.scenario_name.data.strip())
-            .first()
-        )
-        if existing:
-            flash("A scenario with that name already exists.", "warning")
-            return redirect(url_for("ops.network", _anchor="scenarios"))
-
-        scenario.scenario_name = form.scenario_name.data.strip()
-        scenario.periods = form.periods.data
-        scenario.status = form.status.data
-
-        try:
-            db.session.add(scenario)
-            db.session.flush()
-            _log_activity(
-                org_id,
-                current_user.id,
-                "scenario_updated",
-                f"Scenario {scenario.scenario_name} updated",
-                entity_type="scenario",
-                entity_id=scenario.id,
-                details={"status": scenario.status, "periods": scenario.periods},
-            )
-            db.session.commit()
-            flash("Scenario updated.", "success")
-        except IntegrityError:
-            db.session.rollback()
-            flash("A scenario with that name already exists.", "warning")
-    else:
-        flash("Please review the scenario fields.", "danger")
-
-    return redirect(url_for("ops.network", _anchor="scenarios"))
-
-
 @ops_bp.route("/scenarios/<int:scenario_id>/status", methods=["POST"])
 @login_required
 @tenant_required
@@ -728,15 +2161,35 @@ def update_scenario_status(scenario_id: int):
 @login_required
 @tenant_required
 def run_optimization():
-    org_id = _org_id()
+    workspace, dataset = _dataset_context_from_request()
+    org_id = workspace.organization_id
     form = OptimizationRunForm()
-    form.scenario_id.choices = _scenario_choices(org_id)
+    form.scenario_id.choices = _scenario_choices(org_id, workspace.id)
 
     if not form.validate_on_submit():
         flash("Please review the optimization inputs.", "danger")
-        return redirect(url_for("ops.network", _anchor="optimization"))
+        return redirect(url_for("ops.network", workspace_id=workspace.id, dataset_id=dataset.id, _anchor="optimization"))
 
     scenario = get_tenant_record_or_404(PlanningScenario, form.scenario_id.data)
+
+    # Enforce that the selected scenario belongs to the active workspace AND dataset
+    scenario_ds = WorkspaceDataset.for_org(org_id).filter_by(planning_scenario_id=scenario.id).first()
+    if (
+        scenario_ds is None
+        or scenario_ds.workspace_id != workspace.id
+        or scenario_ds.id != dataset.id
+    ):
+        flash("Select the scenario for this dataset only.", "warning")
+        return redirect(
+            url_for(
+                "ops.network",
+                workspace_id=workspace.id,
+                dataset_id=dataset.id,
+                _anchor="optimization",
+            )
+        )
+
+    dataset = scenario_ds
     allow_shortage = bool(form.allow_shortage_penalties.data and not form.strict_service.data)
     shortage_penalty = float(form.shortage_penalty.data or 1000)
     service_level_target = float(form.service_level_target.data) if form.service_level_target.data is not None else None
@@ -808,7 +2261,14 @@ def run_optimization():
             shipment_plan=shipment_plan,
             inventory_plan=inventory_plan,
             cost_breakdown=solution.cost_breakdown,
-            kpis={**solution.kpis, "trips_plan": trips_plan, "shortage_plan": shortage_plan},
+            kpis={
+                **solution.kpis,
+                "trips_plan": trips_plan,
+                "shortage_plan": shortage_plan,
+                "ui_views": solution.ui_views,
+                "solver_diagnostics": solution.diagnostics,
+                "runtime_seconds": solution.runtime_seconds,
+            },
         )
         db.session.add(result)
         scenario.mark_executed(solution.total_cost, summary=solution.kpis)
@@ -846,7 +2306,417 @@ def run_optimization():
         db.session.commit()
         flash("Unexpected error during optimization run.", "danger")
 
-    return redirect(url_for("ops.network", _anchor="optimization"))
+    return redirect(
+        url_for(
+            "ops.network",
+            workspace_id=workspace.id,
+            dataset_id=dataset.id,
+            _anchor="optimization",
+        )
+    )
+
+
+@ops_bp.route("/optimization/latest", methods=["GET"])
+@login_required
+@tenant_required
+def latest_optimization_result():
+    org_id = _org_id()
+    scenario_id = request.args.get("scenario_id", type=int)
+
+    query = OptimizationResult.for_org(org_id)
+    if scenario_id:
+        query = query.filter_by(scenario_id=scenario_id)
+    result = query.order_by(OptimizationResult.created_at.desc()).first()
+    if result is None:
+        return {"error": "no_results"}, 404
+
+    def _coerce_num(val):
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            return val
+
+    payload = {
+        "id": result.id,
+        "scenario_id": result.scenario_id,
+        "job_id": result.job_id,
+        "total_cost": _coerce_num(result.total_cost),
+        "cost_breakdown": result.cost_breakdown or {},
+        "kpis": result.kpis or {},
+        "created_at": result.created_at.isoformat() if result.created_at else None,
+        "solver_status": getattr(result.job, "solver_status", None),
+        "status": getattr(result.job, "status", None),
+    }
+    return payload
+
+
+@ops_bp.route("/exports/optimization/csv", methods=["POST"])
+@login_required
+@tenant_required
+def export_optimization_csv():
+    org_id = _org_id()
+    org = Organization.query.get(org_id)
+    form = OptimizationExportForm()
+    form.scenario_id.choices = _scenario_choices(org_id)
+
+    if not form.validate_on_submit():
+        flash("Select a scenario and at least one section to export.", "danger")
+        return redirect(url_for("ops.network", _anchor="optimization"))
+
+    result = (
+        OptimizationResult.for_org(org_id)
+        .filter_by(scenario_id=form.scenario_id.data)
+        .order_by(OptimizationResult.created_at.desc())
+        .first()
+    )
+    if result is None:
+        flash("No optimization output available for that scenario yet.", "warning")
+        return redirect(url_for("ops.network", _anchor="optimization"))
+
+    ui = (result.kpis or {}).get("ui_views", {}) or {}
+    summary = ui.get("summary", {}) or {}
+    sections = set(form.sections.data or [])
+
+    buf = StringIO()
+    writer = csv.writer(buf)
+    scenario_label = result.scenario.scenario_name if result.scenario else form.scenario_id.data
+    writer.writerow(["Scenario", scenario_label])
+    writer.writerow(["Generated", datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")])
+    writer.writerow([])
+
+    def section_heading(title: str):
+        writer.writerow([title])
+
+    def blank_line():
+        writer.writerow([])
+
+    if "summary" in sections:
+        section_heading("Summary")
+        writer.writerow(["Metric", "Value"])
+        costs = summary.get("costs", {}) or {}
+        writer.writerow(["Objective", summary.get("objective", result.total_cost)])
+        writer.writerow(["Service level %", summary.get("service_level_pct")])
+        writer.writerow(["Runtime (s)", summary.get("runtime_seconds", summary.get("runtime_seconds", 0))])
+        writer.writerow(["Production cost", costs.get("production")])
+        writer.writerow(["Transport cost", costs.get("transport")])
+        writer.writerow(["Holding cost", costs.get("holding")])
+        writer.writerow(["Total cost", costs.get("total", result.total_cost)])
+        blank_line()
+
+    if "dispatch" in sections:
+        dispatch_rows = ui.get("dispatch", []) or []
+        section_heading("Dispatch plan")
+        if dispatch_rows:
+            writer.writerow(["Period", "From", "To", "Mode", "Trips", "Qty", "Trip cost", "Route cost"])
+            for row in dispatch_rows:
+                writer.writerow(
+                    [
+                        row.get("period"),
+                        row.get("from"),
+                        row.get("to"),
+                        row.get("mode"),
+                        round(row.get("trips", 0), 2),
+                        round(row.get("qty", 0), 2),
+                        round(row.get("unit_trip_cost", 0), 2),
+                        round(row.get("route_cost", 0), 2),
+                    ]
+                )
+        else:
+            writer.writerow(["No dispatch plan available."])
+        blank_line()
+
+    if "production" in sections:
+        production_rows = ui.get("production", []) or []
+        section_heading("Production plan")
+        if production_rows:
+            writer.writerow(["IU", "Period", "Produced", "Capacity", "Utilization %", "Cost/ton", "Total cost"])
+            for row in production_rows:
+                writer.writerow(
+                    [
+                        row.get("code"),
+                        row.get("period"),
+                        round(row.get("produced", 0), 2),
+                        round(row.get("capacity", 0), 2),
+                        round(row.get("utilization_pct", 0), 2),
+                        round(row.get("cost_per_ton", 0), 2),
+                        round(row.get("cost", 0), 2),
+                    ]
+                )
+        else:
+            writer.writerow(["No production plan available."])
+        blank_line()
+
+    if "inventory" in sections:
+        inventory_rows = ui.get("inventory", []) or []
+        section_heading("Inventory ledger")
+        if inventory_rows:
+            writer.writerow(
+                [
+                    "Plant",
+                    "Period",
+                    "Opening",
+                    "Inbound",
+                    "Shipments out",
+                    "Demand",
+                    "Outbound total",
+                    "Closing",
+                    "Min",
+                    "Max",
+                ]
+            )
+            for row in inventory_rows:
+                writer.writerow(
+                    [
+                        row.get("code"),
+                        row.get("period"),
+                        round(row.get("opening", 0), 2),
+                        round(row.get("inbound", 0), 2),
+                        round(row.get("outbound_ship", 0), 2),
+                        round(row.get("demand", 0), 2),
+                        round(row.get("outbound_total", 0), 2),
+                        round(row.get("closing", 0), 2),
+                        round(row.get("min_close", 0), 2),
+                        row.get("max_close") if row.get("max_close") is not None else "—",
+                    ]
+                )
+        else:
+            writer.writerow(["No inventory ledger available."])
+        blank_line()
+
+    filename = f"optimization-{_safe_org_slug(org)}-scenario-{form.scenario_id.data}-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}.csv"
+    mem = BytesIO(buf.getvalue().encode("utf-8"))
+    mem.seek(0)
+    _log_activity(
+        org_id,
+        current_user.id,
+        "export_optimization_csv",
+        f"Optimization export for scenario {form.scenario_id.data}",
+        entity_type="optimization_result",
+        entity_id=result.id,
+    )
+    db.session.commit()
+    current_app.logger.info("Optimization CSV export for %s by %s", form.scenario_id.data, current_user.email)
+    return send_file(mem, mimetype="text/csv", as_attachment=True, download_name=filename)
+
+
+@ops_bp.route("/exports/optimization/pdf", methods=["POST"])
+@login_required
+@tenant_required
+def export_optimization_pdf():
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.units import inch
+    from reportlab.pdfgen import canvas
+
+    org_id = _org_id()
+    org = Organization.query.get(org_id)
+    form = OptimizationExportForm()
+    form.scenario_id.choices = _scenario_choices(org_id)
+
+    if not form.validate_on_submit():
+        flash("Select a scenario and at least one section to export.", "danger")
+        return redirect(url_for("ops.network", _anchor="optimization"))
+
+    result = (
+        OptimizationResult.for_org(org_id)
+        .filter_by(scenario_id=form.scenario_id.data)
+        .order_by(OptimizationResult.created_at.desc())
+        .first()
+    )
+    if result is None:
+        flash("No optimization output available for that scenario yet.", "warning")
+        return redirect(url_for("ops.network", _anchor="optimization"))
+
+    ui = (result.kpis or {}).get("ui_views", {}) or {}
+    summary = ui.get("summary", {}) or {}
+    sections = set(form.sections.data or [])
+
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=letter)
+    width, height = letter
+    margin = 0.6 * inch
+
+    theme = {
+        "bg": colors.HexColor("#0b1220"),
+        "panel": colors.HexColor("#0f172a"),
+        "accent": colors.HexColor("#22c55e"),
+        "accent_two": colors.HexColor("#06b6d4"),
+        "muted": colors.HexColor("#94a3b8"),
+        "border": colors.HexColor("#1f2937"),
+        "danger": colors.HexColor("#f97316"),
+    }
+
+    def draw_bg():
+        c.setFillColor(theme["bg"])
+        c.rect(0, 0, width, height, stroke=0, fill=1)
+
+    def header(title: str, subtitle: str) -> float:
+        bar_h = 74
+        c.setFillColor(theme["panel"])
+        c.roundRect(margin, height - margin - bar_h, width - 2 * margin, bar_h, 16, stroke=0, fill=1)
+        c.setStrokeColor(theme["border"])
+        c.setLineWidth(1.1)
+        c.roundRect(margin, height - margin - bar_h, width - 2 * margin, bar_h, 16, stroke=1, fill=0)
+        c.setFillColor(colors.white)
+        c.setFont("Helvetica-Bold", 16)
+        c.drawString(margin + 16, height - margin - 26, title)
+        c.setFont("Helvetica", 10)
+        c.setFillColor(theme["muted"])
+        c.drawString(margin + 16, height - margin - 42, subtitle)
+        c.setFont("Helvetica", 9)
+        c.setFillColor(colors.white)
+        c.drawString(margin + 16, height - margin - 58, f"Generated {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
+        return height - margin - bar_h - 12
+
+    def stat_card(x: float, y: float, w: float, h: float, label: str, value: str, accent) -> None:
+        c.setFillColor(theme["panel"])
+        c.roundRect(x, y - h, w, h, 12, stroke=0, fill=1)
+        c.setStrokeColor(accent)
+        c.setLineWidth(1)
+        c.roundRect(x, y - h, w, h, 12, stroke=1, fill=0)
+        c.setFillColor(theme["muted"])
+        c.setFont("Helvetica", 9)
+        c.drawString(x + 12, y - 16, label)
+        c.setFillColor(colors.white)
+        c.setFont("Helvetica-Bold", 16)
+        c.drawString(x + 12, y - 36, value)
+
+    def section_title(y_pos: float, label: str, accent) -> float:
+        c.setFillColor(accent)
+        c.rect(margin, y_pos - 4, 6, 18, stroke=0, fill=1)
+        c.setFillColor(colors.white)
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(margin + 14, y_pos + 10, label)
+        return y_pos - 18
+
+    def draw_table(y_pos: float, headers: list[str], rows: list[list], accent) -> float:
+        c.setFillColor(theme["panel"])
+        box_h = 18 + 14 * min(len(rows), 14)
+        c.roundRect(margin, y_pos - box_h, width - 2 * margin, box_h, 10, stroke=0, fill=1)
+        c.setStrokeColor(theme["border"])
+        c.setLineWidth(0.8)
+        c.roundRect(margin, y_pos - box_h, width - 2 * margin, box_h, 10, stroke=1, fill=0)
+
+        c.setFillColor(accent)
+        c.setFont("Helvetica-Bold", 9)
+        col_w = (width - 2 * margin - 12) / len(headers)
+        for idx, header_label in enumerate(headers):
+            c.drawString(margin + 6 + idx * col_w, y_pos - 12, header_label)
+
+        c.setFont("Helvetica", 8)
+        c.setFillColor(colors.white)
+        y_row = y_pos - 26
+        max_rows = 12
+        for row in rows[:max_rows]:
+            for idx, cell in enumerate(row):
+                c.drawString(margin + 6 + idx * col_w, y_row, str(cell))
+            y_row -= 12
+            if y_row < margin + 40:
+                c.showPage()
+                draw_bg()
+                y_row = header("Optimization Report", "") - 14
+        return y_row - 6
+
+    draw_bg()
+    scenario_label = result.scenario.scenario_name if result.scenario else f"Scenario {form.scenario_id.data}"
+    status_label = getattr(result.job, "solver_status", "completed") if result.job else "completed"
+    y = header(f"Optimization Report — {scenario_label}", f"Status {status_label}")
+
+    card_w = (width - 2 * margin - 12) / 3
+    card_h = 64
+    objective_val = summary.get("objective", result.total_cost)
+    service_level = summary.get("service_level_pct", 0)
+    runtime_val = summary.get("runtime_seconds", 0)
+    stat_card(margin, y, card_w, card_h, "Objective", f"₹{objective_val:.2f}", theme["accent"])
+    stat_card(margin + card_w + 6, y, card_w, card_h, "Service level", f"{service_level}%", theme["accent_two"])
+    stat_card(margin + 2 * (card_w + 6), y, card_w, card_h, "Runtime (s)", f"{runtime_val:.2f}", theme["danger"])
+    y -= card_h + 16
+
+    if "summary" in sections:
+        costs = summary.get("costs", {}) or {}
+        y = section_title(y, "Cost breakdown", theme["accent_two"])
+        table_rows = [
+            ["Production", f"₹{(costs.get('production') or 0):.2f}"],
+            ["Transport", f"₹{(costs.get('transport') or 0):.2f}"],
+            ["Holding", f"₹{(costs.get('holding') or 0):.2f}"],
+            ["Total", f"₹{(costs.get('total', objective_val) or 0):.2f}"],
+        ]
+        y = draw_table(y, ["Component", "Value"], table_rows, theme["accent_two"]) - 8
+
+    if "dispatch" in sections:
+        dispatch_rows = ui.get("dispatch", []) or []
+        y = section_title(y, "Dispatch plan", theme["accent"])
+        if dispatch_rows:
+            table_rows = [
+                [
+                    row.get("period"),
+                    row.get("from"),
+                    row.get("to"),
+                    row.get("mode"),
+                    round(row.get("trips", 0), 2),
+                    round(row.get("qty", 0), 2),
+                ]
+                for row in dispatch_rows
+            ]
+            y = draw_table(y, ["P", "From", "To", "Mode", "Trips", "Qty"], table_rows, theme["accent"])
+        else:
+            y = draw_table(y, ["Info"], [["No dispatch plan available"]], theme["accent"])
+        y -= 6
+
+    if "production" in sections:
+        production_rows = ui.get("production", []) or []
+        y = section_title(y, "Production plan", theme["accent_two"])
+        if production_rows:
+            table_rows = [
+                [
+                    row.get("code"),
+                    row.get("period"),
+                    round(row.get("produced", 0), 2),
+                    round(row.get("capacity", 0), 2),
+                    round(row.get("utilization_pct", 0), 2),
+                ]
+                for row in production_rows
+            ]
+            y = draw_table(y, ["IU", "P", "Produced", "Capacity", "Util %"], table_rows, theme["accent_two"])
+        else:
+            y = draw_table(y, ["Info"], [["No production plan available"]], theme["accent_two"])
+        y -= 6
+
+    if "inventory" in sections:
+        inventory_rows = ui.get("inventory", []) or []
+        y = section_title(y, "Inventory ledger", theme["danger"])
+        if inventory_rows:
+            table_rows = [
+                [
+                    row.get("code"),
+                    row.get("period"),
+                    round(row.get("opening", 0), 2),
+                    round(row.get("closing", 0), 2),
+                    round(row.get("min_close", 0), 2),
+                    row.get("max_close") if row.get("max_close") is not None else "—",
+                ]
+                for row in inventory_rows
+            ]
+            y = draw_table(y, ["Plant", "P", "Open", "Close", "Min", "Max"], table_rows, theme["danger"])
+        else:
+            y = draw_table(y, ["Info"], [["No inventory ledger available"]], theme["danger"])
+
+    c.showPage()
+    c.save()
+    buf.seek(0)
+
+    filename = f"optimization-{_safe_org_slug(org)}-scenario-{form.scenario_id.data}-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}.pdf"
+    _log_activity(
+        org_id,
+        current_user.id,
+        "export_optimization_pdf",
+        f"Optimization PDF for scenario {form.scenario_id.data}",
+        entity_type="optimization_result",
+        entity_id=result.id,
+    )
+    db.session.commit()
+    current_app.logger.info("Optimization PDF export for %s by %s", form.scenario_id.data, current_user.email)
+    return send_file(buf, mimetype="application/pdf", as_attachment=True, download_name=filename)
 
 
 @ops_bp.route("/exports/csv", methods=["POST"])

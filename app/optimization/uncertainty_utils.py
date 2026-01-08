@@ -46,6 +46,7 @@ def make_demand_scenario(dataset: CanonicalDataset, multiplier: float, probabili
         inventory=dataset.inventory,
         demand=adjusted,
         safety_stock=dataset.safety_stock,
+        min_fulfillment=dataset.min_fulfillment,
         metadata={
             **dataset.metadata,
             "scenario_probability": probability,

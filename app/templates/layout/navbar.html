@@ -32,22 +32,22 @@
 
     {% if current_user.is_authenticated %}
       <div class="nav-main-links d-none d-lg-flex align-items-center gap-4 ms-4" role="menubar" aria-label="Primary product navigation">
-        <a class="btn btn-link nav-link px-0 text-decoration-none d-inline-flex align-items-center gap-2" role="menuitem" href="{{ url_for('main.dashboard') }}" title="Platform overview">
+        <a class="btn btn-link nav-link px-0 text-decoration-none d-inline-flex align-items-center gap-2" role="menuitem" href="{{ url_for('main.dashboard') }}" title="Dashboard">
           <i class="bi bi-grid"></i>
-          <span>Platform overview</span>
+          <span>Dashboard</span>
+        </a>
+        <a class="btn btn-link nav-link px-0 text-decoration-none d-inline-flex align-items-center gap-2" role="menuitem" href="{{ url_for('ops.network') }}" title="Network inputs">
+          <i class="bi bi-diagram-3"></i>
+          <span>Operations</span>
         </a>
         <a class="btn btn-link nav-link px-0 text-decoration-none d-inline-flex align-items-center gap-2" role="menuitem" href="{{ url_for('main.analytics') }}" title="Analytics & insights">
           <i class="bi bi-graph-up-arrow"></i>
           <span>Analytics</span>
         </a>
-        <a class="btn btn-link nav-link px-0 text-decoration-none d-inline-flex align-items-center gap-2" role="menuitem" href="{{ url_for('ops.activity_log') }}" title="Operations activity log">
-          <i class="bi bi-activity"></i>
-          <span>Operations activity</span>
-        </a>
         {% if current_user.is_org_admin %}
           <a class="btn btn-link nav-link px-0 text-decoration-none d-inline-flex align-items-center gap-2" role="menuitem" href="{{ url_for('tenant.user_management') }}" title="User and access management">
             <i class="bi bi-shield-lock"></i>
-            <span>User management</span>
+            <span>Admin</span>
           </a>
         {% endif %}
       </div>

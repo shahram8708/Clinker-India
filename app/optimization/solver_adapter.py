@@ -43,11 +43,24 @@ class _DeterministicMilpSolver:
         return self._pulp
 
     def _feasibility_screen(self, dataset, allow_shortage: bool = False) -> tuple[bool, dict, str]:
+        def _safe_float(val: object, default: float = 0.0) -> float:
+            try:
+                return float(val)
+            except (TypeError, ValueError):
+                return default
+
         plant_lookup = {p["id"]: p for p in dataset.plants}
         iu_ids = [pid for pid, plant in plant_lookup.items() if plant.get("type") == "IU"]
         gu_ids = [pid for pid, plant in plant_lookup.items() if plant.get("type") == "GU"]
 
-        total_supply = sum(float(plant_lookup[i]["production_capacity"]) for i in iu_ids) * dataset.periods
+        # Use period-specific capacities when available
+        total_supply = 0.0
+        for pid in iu_ids:
+            if pid in getattr(dataset, "period_capacities", {}):
+                total_supply += sum(dataset.period_capacities.get(pid, []))
+            else:
+                total_supply += float(plant_lookup[pid].get("production_capacity", 0.0)) * dataset.periods
+
         total_demand = sum(sum(periods) for periods in dataset.demand.values())
         initial_inventory = sum(dataset.inventory.values())
 
@@ -66,7 +79,7 @@ class _DeterministicMilpSolver:
                 blocking.append(f"no_inbound_route_for_GU_{gu}")
 
         for route in dataset.routes:
-            if float(route.get("min_batch_quantity", 0.0)) > float(route.get("trip_capacity", 0.0)):
+            if _safe_float(route.get("min_batch_quantity")) > _safe_float(route.get("trip_capacity")):
                 blocking.append(f"route_{route['id']}_sbq_exceeds_capacity")
 
         diagnostics = {
@@ -107,20 +120,42 @@ class _DeterministicMilpSolver:
 
         demand = {pid: dataset.demand.get(pid, [0.0] * dataset.periods) for pid in plant_lookup}
         inv0 = {pid: float(dataset.inventory.get(pid, 0.0)) for pid in plant_lookup}
+
+        # Per-plant minima/maxima for closing stocks (period-specific)
+        min_close = getattr(dataset, "min_closing_stocks", {}) or {}
+        max_close = getattr(dataset, "max_closing_stocks", {}) or {}
+
+        # Safety floor as a per-plant baseline; period overrides handled later
         safety = {pid: float(dataset.safety_stock.get(pid, 0.0)) for pid in plant_lookup}
-        inv_cap = {pid: float(plant_lookup[pid].get("max_inventory_capacity", 0.0)) for pid in plant_lookup}
-        
+
         # Use period-specific capacities if available, otherwise fall back to static capacity
-        prod_cap = {}
+        prod_cap: Dict[int, list[float]] = {}
         for pid in plant_lookup:
             if pid in dataset.period_capacities and len(dataset.period_capacities[pid]) == dataset.periods:
-                prod_cap[pid] = dataset.period_capacities[pid]
+                prod_cap[pid] = [float(v) for v in dataset.period_capacities[pid]]
             else:
                 static_cap = float(plant_lookup[pid].get("production_capacity", 0.0))
                 prod_cap[pid] = [static_cap] * dataset.periods
-        
-        prod_cost = {pid: float(plant_lookup[pid].get("production_cost", 0.0)) for pid in plant_lookup}
-        hold_cost = {pid: float(plant_lookup[pid].get("holding_cost", 0.0)) for pid in plant_lookup}
+
+        # Production costs per period; default to large penalty if missing
+        prod_cost: Dict[int, list[float]] = {}
+        for pid in plant_lookup:
+            series = getattr(dataset, "period_specific_costs", {}).get(pid)
+            if series and len(series) == dataset.periods:
+                prod_cost[pid] = [float(v) if float(v) > 0 else 1_000_000.0 for v in series]
+            else:
+                scalar = float(plant_lookup[pid].get("production_cost", 0.0) or 1_000_000.0)
+                prod_cost[pid] = [scalar] * dataset.periods
+
+        # Holding cost fixed to ₹5/ton-period unless a plant override exists
+        hold_cost: Dict[int, float] = {pid: float(plant_lookup[pid].get("holding_cost", 5.0) or 5.0) for pid in plant_lookup}
+
+        # Inventory caps default to infinity unless period max is provided
+        inv_cap: Dict[int, float] = {}
+        for pid in plant_lookup:
+            # Take the smallest finite max across periods if provided, else inf
+            caps = [cap for (p, _), cap in max_close.items() if p == pid and cap < float("inf")]
+            inv_cap[pid] = min(caps) if caps else float("inf")
 
         prob = pulp.LpProblem("deterministic_supply_chain", pulp.LpMinimize)
 
@@ -136,8 +171,6 @@ class _DeterministicMilpSolver:
                 for t in periods:
                     Shortage[(pid, t)] = pulp.LpVariable(f"shortage_{pid}_{t}", lowBound=0)
 
-        route_cost_per_ton = {route["id"]: float(route.get("cost_per_ton", 0.0) or 0.0) for route in dataset.routes}
-        
         # Extract batch multipliers for each route
         batch_multipliers = {}
         for route in dataset.routes:
@@ -210,6 +243,7 @@ class _DeterministicMilpSolver:
                     prob += Trips[(rid, t)] <= max_trips, f"trip_limit_{rid}_{t}"
 
         total_demand_qty = sum(sum(vals) for vals in demand.values()) or 1.0
+        min_map = getattr(dataset, "min_fulfillment", {}) or {}
 
         for pid in plant_lookup:
             plant_type = plant_lookup[pid].get("type")
@@ -219,51 +253,83 @@ class _DeterministicMilpSolver:
                 demand_t = float(demand.get(pid, [0.0] * dataset.periods)[t - 1])
                 prev_inv = inv0[pid] if t == 1 else Inv[(pid, t - 1)]
 
+                pct_series = min_map.get(pid, [])
+                min_pct = pct_series[t - 1] if len(pct_series) >= t else 1.0
+                allowed_shortage = max(demand_t * (1 - min_pct), 0.0)
+
                 if plant_type == "IU":
                     if model.allow_shortage:
                         short_var = Shortage[(pid, t)]
                         prob += Inv[(pid, t)] == prev_inv + inbound + X[(pid, t)] - outbound - demand_t + short_var, f"inv_bal_IU_{pid}_{t}"
-                        prob += short_var <= demand_t, f"shortage_cap_{pid}_{t}"
+                        prob += short_var <= allowed_shortage, f"shortage_cap_{pid}_{t}"
                     else:
                         prob += Inv[(pid, t)] == prev_inv + inbound + X[(pid, t)] - outbound - demand_t, f"inv_bal_IU_{pid}_{t}"
                 else:
                     if model.allow_shortage:
                         short_var = Shortage[(pid, t)]
                         prob += Inv[(pid, t)] == prev_inv + inbound - demand_t + short_var, f"inv_bal_GU_{pid}_{t}"
-                        prob += short_var <= demand_t, f"shortage_cap_{pid}_{t}"
+                        prob += short_var <= allowed_shortage, f"shortage_cap_{pid}_{t}"
                     else:
                         prob += Inv[(pid, t)] == prev_inv + inbound - demand_t, f"inv_bal_GU_{pid}_{t}"
 
-                prob += Inv[(pid, t)] >= safety.get(pid, 0.0), f"safety_{pid}_{t}"
-                upper_cap = inv_cap.get(pid, 0.0)
-                if upper_cap > 0:
-                    prob += Inv[(pid, t)] <= upper_cap, f"cap_{pid}_{t}"
+                # Apply per-period min/max closing stock (defaults to safety + unbounded upper)
+                min_floor = max(safety.get(pid, 0.0), min_close.get((pid, t), 0.0))
+                prob += Inv[(pid, t)] >= min_floor, f"min_close_{pid}_{t}"
 
-        # Build objective function with period-specific freight and handling costs
+                max_bound = max_close.get((pid, t))
+                if max_bound is None:
+                    max_bound = inv_cap.get(pid, float("inf"))
+                if max_bound < float("inf"):
+                    prob += Inv[(pid, t)] <= max_bound, f"max_close_{pid}_{t}"
+
+        # Flow constraints from IUGUConstraint sheet (per period, optional mode/to filters)
+        if getattr(dataset, "flow_constraints", None):
+            for fc in dataset.flow_constraints:
+                period = int(fc.get("period", 1))
+                if period not in periods:
+                    continue
+                src = fc.get("source")
+                dst = fc.get("destination")
+                mode = fc.get("mode")
+                bound_type = fc.get("type")
+                value = float(fc.get("value", 0.0))
+
+                relevant_routes = [
+                    r for r in dataset.routes
+                    if r.get("source") == src
+                    and (dst is None or r.get("destination") == dst)
+                    and (mode is None or r.get("mode") == mode)
+                ]
+                if not relevant_routes:
+                    continue
+
+                flow_expr = pulp.lpSum(Ship[(r["id"], period)] for r in relevant_routes)
+                if bound_type == "E":
+                    prob += flow_expr == value, f"flow_exact_{src}_{dst or 'all'}_{mode or 'all'}_{period}"
+                elif bound_type == "L":
+                    prob += flow_expr >= value, f"flow_min_{src}_{dst or 'all'}_{mode or 'all'}_{period}"
+                elif bound_type == "G":
+                    prob += flow_expr <= value, f"flow_max_{src}_{dst or 'all'}_{mode or 'all'}_{period}"
+
+        # Build objective function with period-specific freight and handling costs (per trip)
         transport_cost_terms = []
         for route in dataset.routes:
             rid = route["id"]
             for t_idx, t in enumerate(periods):
-                # Get period-specific freight cost (fallback to cost_per_trip if not available)
-                if rid in dataset.freight_costs and len(dataset.freight_costs[rid]) > t_idx:
-                    freight_t = dataset.freight_costs[rid][t_idx]
-                else:
-                    freight_t = float(route.get("cost_per_trip", 0.0))
-                
-                # Get period-specific handling cost (fallback to cost_per_ton if not available)
-                if rid in dataset.handling_costs and len(dataset.handling_costs[rid]) > t_idx:
-                    handling_t = dataset.handling_costs[rid][t_idx]
-                else:
-                    handling_t = route_cost_per_ton.get(rid, 0.0)
-                
-                # Transport cost = freight (per trip) × Trips + handling (per ton) × Ship
-                transport_cost_terms.append(freight_t * Trips[(rid, t)] + handling_t * Ship[(rid, t)])
-        
+                freight_t = dataset.freight_costs.get(rid, [0.0] * dataset.periods)[t_idx]
+                handling_t = dataset.handling_costs.get(rid, [0.0] * dataset.periods)[t_idx]
+                trip_cost = freight_t + handling_t
+                transport_cost_terms.append(trip_cost * Trips[(rid, t)])
+
         objective = (
-            pulp.lpSum(prod_cost[i] * X[(i, t)] for i in iu_ids for t in periods)
+            pulp.lpSum(prod_cost[i][t - 1] * X[(i, t)] for i in iu_ids for t in periods)
             + pulp.lpSum(transport_cost_terms)
             + pulp.lpSum(hold_cost[p] * Inv[(p, t)] for p in plant_lookup for t in periods)
-            + (pulp.lpSum(model.shortage_penalty * Shortage[(pid, t)] for pid in plant_lookup for t in periods) if model.allow_shortage else 0)
+            + (
+                pulp.lpSum(model.shortage_penalty * Shortage[(pid, t)] for pid in plant_lookup for t in periods)
+                if model.allow_shortage
+                else 0
+            )
         )
         prob += objective
         
@@ -344,29 +410,18 @@ class _DeterministicMilpSolver:
                     if val > 0:
                         shortage_plan[key] = val
 
-            production_cost_total = sum(prod_cost[i] * production_plan.get((i, t), 0.0) for i in iu_ids for t in periods)
-            
-            # Calculate transport cost using period-specific freight and handling costs
+            production_cost_total = sum(prod_cost[i][t - 1] * production_plan.get((i, t), 0.0) for i in iu_ids for t in periods)
+
+            # Calculate transport cost using period-specific freight and handling costs (per trip)
             transport_cost_total = 0.0
             for route in dataset.routes:
                 rid = route["id"]
                 for t_idx, t in enumerate(periods):
-                    # Get period-specific freight cost
-                    if rid in dataset.freight_costs and len(dataset.freight_costs[rid]) > t_idx:
-                        freight_t = dataset.freight_costs[rid][t_idx]
-                    else:
-                        freight_t = float(route.get("cost_per_trip", 0.0))
-                    
-                    # Get period-specific handling cost
-                    if rid in dataset.handling_costs and len(dataset.handling_costs[rid]) > t_idx:
-                        handling_t = dataset.handling_costs[rid][t_idx]
-                    else:
-                        handling_t = route_cost_per_ton.get(rid, 0.0)
-                    
+                    freight_t = dataset.freight_costs.get(rid, [0.0] * dataset.periods)[t_idx]
+                    handling_t = dataset.handling_costs.get(rid, [0.0] * dataset.periods)[t_idx]
                     trips_val = max(pulp.value(Trips[(rid, t)]), 0.0)
-                    ship_val = shipment_plan.get((rid, t), 0.0)
-                    transport_cost_total += freight_t * trips_val + handling_t * ship_val
-            
+                    transport_cost_total += (freight_t + handling_t) * trips_val
+
             holding_cost_total = sum(hold_cost[p] * inventory_plan.get((p, t), 0.0) for p in plant_lookup for t in periods)
             shortage_cost_total = sum(model.shortage_penalty * shortage_plan.get((p, t), 0.0) for p in plant_lookup for t in periods) if model.allow_shortage else 0.0
         else:
@@ -428,6 +483,7 @@ class _DeterministicMilpSolver:
         prod_cap = {pid: float(plant_lookup[pid].get("production_capacity", 0.0)) for pid in plant_lookup}
         prod_cost = {pid: float(plant_lookup[pid].get("production_cost", 0.0)) for pid in plant_lookup}
         hold_cost = {pid: float(plant_lookup[pid].get("holding_cost", 0.0)) for pid in plant_lookup}
+        min_map = getattr(base, "min_fulfillment", {}) or {}
 
         route_cost_per_ton = {route["id"]: float(route.get("cost_per_ton", 0.0) or 0.0) for route in base.routes}
 
@@ -498,24 +554,28 @@ class _DeterministicMilpSolver:
                     demand_t = float(demand.get(pid, [0.0] * base.periods)[t - 1])
                     prev_inv = inv0[pid] if t == 1 else Inv[(s_idx, pid, t - 1)]
 
+                    pct_series = min_map.get(pid, [])
+                    min_pct = pct_series[t - 1] if len(pct_series) >= t else 1.0
+                    allowed_shortage = max(demand_t * (1 - min_pct), 0.0)
+
                     if plant_type == "IU":
                         if model.allow_shortage:
                             short_var = Shortage[(s_idx, pid, t)]
                             prob += Inv[(s_idx, pid, t)] == prev_inv + inbound + X[(pid, t)] - outbound - demand_t + short_var, f"inv_bal_IU_s{s_idx}_{pid}_{t}"
-                            prob += short_var <= demand_t, f"short_cap_s{s_idx}_{pid}_{t}"
+                            prob += short_var <= allowed_shortage, f"short_cap_s{s_idx}_{pid}_{t}"
                         else:
                             prob += Inv[(s_idx, pid, t)] == prev_inv + inbound + X[(pid, t)] - outbound - demand_t, f"inv_bal_IU_s{s_idx}_{pid}_{t}"
                     else:
                         if model.allow_shortage:
                             short_var = Shortage[(s_idx, pid, t)]
                             prob += Inv[(s_idx, pid, t)] == prev_inv + inbound - demand_t + short_var, f"inv_bal_GU_s{s_idx}_{pid}_{t}"
-                            prob += short_var <= demand_t, f"short_cap_s{s_idx}_{pid}_{t}"
+                            prob += short_var <= allowed_shortage, f"short_cap_s{s_idx}_{pid}_{t}"
                         else:
                             prob += Inv[(s_idx, pid, t)] == prev_inv + inbound - demand_t, f"inv_bal_GU_s{s_idx}_{pid}_{t}"
 
                     prob += Inv[(s_idx, pid, t)] >= safety.get(pid, 0.0), f"safety_s{s_idx}_{pid}_{t}"
                     upper_cap = inv_cap.get(pid, 0.0)
-                    if upper_cap > 0:
+                    if upper_cap > 0 and math.isfinite(upper_cap):
                         prob += Inv[(s_idx, pid, t)] <= upper_cap, f"cap_s{s_idx}_{pid}_{t}"
 
             prod_cost_term = pulp.lpSum(prod_cost[i] * X[(i, t)] for i in iu_ids for t in periods)
@@ -647,6 +707,7 @@ class _DeterministicMilpSolver:
         prod_cost = {pid: float(plant_lookup[pid].get("production_cost", 0.0)) for pid in plant_lookup}
         hold_cost = {pid: float(plant_lookup[pid].get("holding_cost", 0.0)) for pid in plant_lookup}
         route_cost_per_ton = {route["id"]: float(route.get("cost_per_ton", 0.0) or 0.0) for route in base.routes}
+        min_map = getattr(base, "min_fulfillment", {}) or {}
 
         prob = pulp.LpProblem("robust_minmax_supply_chain", pulp.LpMinimize)
 
@@ -687,24 +748,28 @@ class _DeterministicMilpSolver:
                     demand_t = float(demand.get(pid, [0.0] * base.periods)[t - 1])
                     prev_inv = inv0[pid] if t == 1 else Inv[(s_idx, pid, t - 1)]
 
+                    pct_series = min_map.get(pid, [])
+                    min_pct = pct_series[t - 1] if len(pct_series) >= t else 1.0
+                    allowed_shortage = max(demand_t * (1 - min_pct), 0.0)
+
                     if plant_type == "IU":
                         if model.allow_shortage:
                             short_var = Shortage[(s_idx, pid, t)]
                             prob += Inv[(s_idx, pid, t)] == prev_inv + inbound + X[(pid, t)] - outbound - demand_t + short_var, f"inv_bal_IU_s{s_idx}_{pid}_{t}"
-                            prob += short_var <= demand_t, f"short_cap_s{s_idx}_{pid}_{t}"
+                            prob += short_var <= allowed_shortage, f"short_cap_s{s_idx}_{pid}_{t}"
                         else:
                             prob += Inv[(s_idx, pid, t)] == prev_inv + inbound + X[(pid, t)] - outbound - demand_t, f"inv_bal_IU_s{s_idx}_{pid}_{t}"
                     else:
                         if model.allow_shortage:
                             short_var = Shortage[(s_idx, pid, t)]
                             prob += Inv[(s_idx, pid, t)] == prev_inv + inbound - demand_t + short_var, f"inv_bal_GU_s{s_idx}_{pid}_{t}"
-                            prob += short_var <= demand_t, f"short_cap_s{s_idx}_{pid}_{t}"
+                            prob += short_var <= allowed_shortage, f"short_cap_s{s_idx}_{pid}_{t}"
                         else:
                             prob += Inv[(s_idx, pid, t)] == prev_inv + inbound - demand_t, f"inv_bal_GU_s{s_idx}_{pid}_{t}"
 
                     prob += Inv[(s_idx, pid, t)] >= safety.get(pid, 0.0), f"safety_s{s_idx}_{pid}_{t}"
                     upper_cap = inv_cap.get(pid, 0.0)
-                    if upper_cap > 0:
+                    if upper_cap > 0 and math.isfinite(upper_cap):
                         prob += Inv[(s_idx, pid, t)] <= upper_cap, f"cap_s{s_idx}_{pid}_{t}"
 
             prod_cost_term = pulp.lpSum(prod_cost[i] * X[(i, t)] for i in iu_ids for t in periods)

@@ -3,788 +3,766 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/network.css') }}">
 {% endblock %}
 {% block content %}
-
 <div class="network-shell d-flex flex-column gap-4">
   <section class="network-hero card shadow-soft card-tilt">
     <div class="card-body p-4 p-lg-5 position-relative overflow-hidden">
       <div class="hero-orb hero-orb-primary"></div>
       <div class="hero-orb hero-orb-amber"></div>
       <div class="hero-grid-lines"></div>
-
       <div class="d-flex flex-column flex-lg-row align-items-start gap-4">
         <div class="flex-grow-1">
           <div class="d-flex align-items-center gap-2 mb-2">
             <span class="eyebrow text-secondary small text-uppercase">Network control tower</span>
-            <span class="chip chip-soft">Live</span>
+            <span class="chip chip-soft">Nine-sheet inputs</span>
           </div>
-          <h1 class="display-6 fs-3 fw-semibold mb-2 text-body">Clinker supply, transport, and inventory in one canvas</h1>
-          <p class="text-secondary lead-sm mb-3">Monitor plant readiness, route reliability, and safety stock with quick exports and optimization triggers.</p>
-          <div class="d-flex flex-wrap gap-2 mb-3">
-            <a class="btn btn-gradient btn-sm shadow-sm" href="#optimization"><i class="bi bi-cpu me-1"></i>Run optimizer</a>
-            <a class="btn btn-ghost btn-sm shadow-sm" href="#inventory"><i class="bi bi-box-seam me-1"></i>Safety stock</a>
-          </div>
+          <h1 class="display-6 fs-3 fw-semibold mb-2 text-body">Capture all clinker inputs across IU/GU network</h1>
+          <p class="text-secondary lead-sm mb-3">Manual entry for demand, capacity, costs, logistics, constraints, and stocks. Tenant-safe, scenario-ready.</p>
           <div class="d-flex flex-wrap gap-2 hero-chip-row">
-            <span class="chip chip-soft"><i class="bi bi-buildings me-1"></i>IU {{ metrics.iu_count }} · GU {{ metrics.gu_count }}</span>
-            <span class="chip chip-info"><i class="bi bi-truck me-1"></i>{{ metrics.active_routes }} active routes</span>
-            <span class="chip chip-warning"><i class="bi bi-exclamation-diamond me-1"></i>{{ inventory_alerts|length }} safety alerts</span>
+            <span class="chip chip-info"><i class="bi bi-collection me-1"></i>{{ metrics.demands or 0 }} demand rows</span>
+            <span class="chip chip-success"><i class="bi bi-building me-1"></i>{{ metrics.iugu_types or 0 }} IUGU types</span>
+            <span class="chip chip-warning"><i class="bi bi-truck me-1"></i>{{ metrics.logistics or 0 }} logistics lanes</span>
           </div>
-        </div>
-
-        <div class="hero-scorecard d-grid gap-3">
-          <div class="scorecard-pane">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <span class="text-secondary small">Network snapshot</span>
-              <span class="chip chip-soft">Auto-refresh</span>
+          <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-2 mt-3">
+            <span class="chip chip-soft">Workspace: {{ workspace.name }}</span>
+            <span class="chip chip-info">Dataset: {{ dataset.label }}</span>
+            <div class="d-flex align-items-center gap-2">
+              <span class="text-secondary xsmall">Switch dataset</span>
+              <select class="form-select form-select-sm w-auto" onchange="if(this.value){ window.location=this.value; }">
+                {% for ds in datasets %}
+                  <option value="{{ url_for('ops.network', workspace_id=workspace.id, dataset_id=ds.id) }}" {% if ds.id == dataset.id %}selected{% endif %}>{{ ds.label }}</option>
+                {% endfor %}
+              </select>
             </div>
-            <div class="row g-3">
+            <a class="btn btn-outline-light btn-sm ms-md-auto" href="{{ url_for('ops.network', workspace_id=workspace.id) }}#optimization"><i class="bi bi-plus-circle me-1"></i>New dataset</a>
+          </div>
+          <form method="POST" action="{{ url_for('ops.create_workspace') }}" class="d-flex flex-column flex-md-row gap-2 align-items-start align-items-md-center mt-2">
+            {{ workspace_form.csrf_token }}
+            <div class="d-flex gap-2 flex-wrap">
+              {{ workspace_form.name(class_='form-control form-control-sm', placeholder='New workspace name') }}
+              {{ workspace_form.description(class_='form-control form-control-sm', placeholder='Optional description') }}
+            </div>
+            {{ workspace_form.submit(class_='btn btn-primary btn-sm') }}
+          </form>
+        </div>
+        <div class="hero-scorecard d-grid gap-3">
+          <div class="scorecard-pane subtle-panel">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <span class="text-secondary small">Data coverage</span>
+              <span class="chip chip-soft">IU/GU</span>
+            </div>
+            <div class="row g-2">
               <div class="col-6">
                 <div class="mini-kpi">
                   <div class="mini-kpi__icon bg-primary-subtle text-primary"><i class="bi bi-building"></i></div>
-                  <div>
-                    <div class="mini-kpi__value">{{ metrics.total_plants }}</div>
-                    <div class="mini-kpi__label">Plants monitored</div>
-                  </div>
+                  <div><div class="mini-kpi__value">{{ metrics.iugu_types or 0 }}</div><div class="mini-kpi__label">IUGU types</div></div>
                 </div>
               </div>
               <div class="col-6">
                 <div class="mini-kpi">
-                  <div class="mini-kpi__icon bg-success-subtle text-success"><i class="bi bi-truck"></i></div>
-                  <div>
-                    <div class="mini-kpi__value">{{ metrics.active_routes }}</div>
-                    <div class="mini-kpi__label">Routes active</div>
-                  </div>
+                  <div class="mini-kpi__icon bg-success-subtle text-success"><i class="bi bi-clipboard-data"></i></div>
+                  <div><div class="mini-kpi__value">{{ metrics.demands or 0 }}</div><div class="mini-kpi__label">Demand rows</div></div>
                 </div>
               </div>
               <div class="col-6">
                 <div class="mini-kpi">
-                  <div class="mini-kpi__icon bg-warning-subtle text-warning"><i class="bi bi-bell"></i></div>
-                  <div>
-                    <div class="mini-kpi__value">{{ inventory_alerts|length }}</div>
-                    <div class="mini-kpi__label">Alerts to review</div>
-                  </div>
+                  <div class="mini-kpi__icon bg-warning-subtle text-warning"><i class="bi bi-truck"></i></div>
+                  <div><div class="mini-kpi__value">{{ metrics.logistics or 0 }}</div><div class="mini-kpi__label">Logistics lanes</div></div>
                 </div>
               </div>
               <div class="col-6">
                 <div class="mini-kpi">
-                  <div class="mini-kpi__icon bg-info-subtle text-info"><i class="bi bi-collection"></i></div>
-                  <div>
-                    <div class="mini-kpi__value">{{ scenarios|length }}</div>
-                    <div class="mini-kpi__label">Scenarios tracked</div>
-                  </div>
+                  <div class="mini-kpi__icon bg-info-subtle text-info"><i class="bi bi-shield-check"></i></div>
+                  <div><div class="mini-kpi__value">{{ metrics.closings or 0 }}</div><div class="mini-kpi__label">Closing targets</div></div>
                 </div>
               </div>
             </div>
           </div>
-          <div class="scorecard-pane subtle-panel">
-            <div class="d-flex align-items-center gap-2 mb-1">
-              <span class="badge-dot bg-success"></span>
-              <span class="small text-secondary">Safety coverage</span>
+          <div class="scorecard-pane">
+            <div class="d-flex align-items-center gap-2 mb-2"><span class="badge-dot bg-success"></span><span class="small text-secondary">Scenarios</span></div>
+            <div class="d-flex align-items-center justify-content-between">
+              <div class="mini-kpi__value">{{ scenarios|length }}</div>
+              <a href="#optimization" class="btn btn-ghost btn-sm"><i class="bi bi-lightning"></i>Manage</a>
             </div>
-            {% set total = metrics.total_inventory or 1 %}
-            {% set safe_pct = (metrics.safe_inventory / total * 100) if metrics.total_inventory else 0 %}
-            {% set alert_pct = 100 - safe_pct %}
-            <div class="progress progress-slim mb-2">
-              <div class="progress-bar bg-success" role="progressbar" style="width: {{ safe_pct }}%"></div>
-              <div class="progress-bar bg-warning" role="progressbar" style="width: {{ alert_pct }}%"></div>
-            </div>
-            <div class="d-flex justify-content-between text-secondary small">
-              <span>Safe {{ metrics.safe_inventory }}</span>
-              <span>Alerts {{ metrics.inventory_alerts }}</span>
-              <span>Total {{ metrics.total_inventory }}</span>
-            </div>
+            <p class="text-secondary xsmall mb-0">Choose a scenario when running the optimizer. Data tables remain tenant-scoped.</p>
           </div>
         </div>
       </div>
-
       <div class="subnav-floating mt-4">
-        <a class="subnav-link" href="#reports"><i class="bi bi-upload"></i><span>Exports</span></a>
-        <a class="subnav-link" href="#plants"><i class="bi bi-building"></i><span>Plants</span></a>
-        <a class="subnav-link" href="#routes"><i class="bi bi-truck"></i><span>Routes</span></a>
-        <a class="subnav-link" href="#inventory"><i class="bi bi-box-seam"></i><span>Inventory</span></a>
-        <a class="subnav-link" href="#optimization"><i class="bi bi-cpu"></i><span>Optimization</span></a>
-        <a class="subnav-link" href="#scenarios"><i class="bi bi-bar-chart"></i><span>Scenarios</span></a>
+        <a class="subnav-link" href="#iugu-types"><i class="bi bi-building"></i><span>IUGU types</span></a>
+        <a class="subnav-link" href="#clinker-demand"><i class="bi bi-clipboard-data"></i><span>Demand</span></a>
+        <a class="subnav-link" href="#clinker-capacity"><i class="bi bi-speedometer"></i><span>Capacity</span></a>
+        <a class="subnav-link" href="#production-cost"><i class="bi bi-cash-coin"></i><span>Prod cost</span></a>
+        <a class="subnav-link" href="#logistics-iugu"><i class="bi bi-truck"></i><span>Logistics</span></a>
+        <a class="subnav-link" href="#iugu-constraint"><i class="bi bi-diagram-3"></i><span>Constraints</span></a>
+        <a class="subnav-link" href="#iugu-opening-stock"><i class="bi bi-box"></i><span>Opening</span></a>
+        <a class="subnav-link" href="#hub-opening-stock"><i class="bi bi-diagram-3-fill"></i><span>Hub</span></a>
+        <a class="subnav-link" href="#iugu-closing-stock"><i class="bi bi-archive"></i><span>Closing</span></a>
+        <a class="subnav-link" href="#optimization"><i class="bi bi-cpu"></i><span>Optimize</span></a>
       </div>
     </div>
   </section>
 
-  <section id="reports" class="section-card-luxe card shadow-soft card-tilt">
-    <div class="card-body p-4">
-      <div class="section-heading d-flex align-items-start justify-content-between flex-wrap gap-3 mb-3">
-        <div class="d-flex align-items-start gap-3">
-          <div class="icon-chip icon-chip-info shadow-sm"><i class="bi bi-upload"></i></div>
-          <div>
-            <p class="eyebrow text-secondary small mb-1">Exports</p>
-            <h2 class="h6 mb-1 text-body">Shareable snapshots</h2>
-            <p class="text-secondary small mb-0">Deliver CSV/PDF extracts with a click while keeping tenant scope intact.</p>
-          </div>
-        </div>
-        <span class="chip chip-soft"><i class="bi bi-file-earmark-text me-1"></i>CSV · PDF</span>
-      </div>
-
-      <div class="row g-3 align-items-end">
-        <div class="col-12 col-lg-6">
-          <div class="panel-tile">
-            <div class="d-flex align-items-center justify-content-between mb-2">
-              <div class="d-flex align-items-center gap-2">
-                <span class="badge-dot bg-info"></span>
-                <span class="small text-secondary">Dataset export</span>
-              </div>
-              <small class="text-secondary">CSV download</small>
-            </div>
-            <form method="POST" action="{{ url_for('ops.export_csv') }}" class="d-flex flex-wrap gap-2 align-items-center">
-              {{ export_form.csrf_token }}
-              {{ export_form.dataset(class_='form-select form-select-sm input-premium flex-grow-1') }}
-              <label class="form-check-label small text-secondary d-flex align-items-center gap-1">
-                {{ export_form.include_inactive(class_='form-check-input') }}
-                Include inactive
-              </label>
-              {{ export_form.submit(class_='btn btn-ghost btn-sm', **{'data-loading-text': 'Exporting...'}) }}
-            </form>
-          </div>
-        </div>
-        <div class="col-12 col-lg-6">
-          <div class="panel-tile">
-            <div class="d-flex align-items-center justify-content-between mb-2">
-              <div class="d-flex align-items-center gap-2">
-                <span class="badge-dot bg-warning"></span>
-                <span class="small text-secondary">Report export</span>
-              </div>
-              <small class="text-secondary">PDF briefing</small>
-            </div>
-            <form method="POST" action="{{ url_for('ops.export_pdf') }}" class="d-flex flex-wrap gap-2 align-items-center">
-              {{ pdf_form.csrf_token }}
-              {{ pdf_form.report_type(class_='form-select form-select-sm input-premium flex-grow-1') }}
-              {{ pdf_form.timeframe(class_='form-select form-select-sm input-premium flex-grow-1') }}
-              <label class="form-check-label small text-secondary d-flex align-items-center gap-1">
-                {{ pdf_form.highlight_alerts(class_='form-check-input') }}
-                Highlight alerts
-              </label>
-              {{ pdf_form.submit(class_='btn btn-gradient btn-sm', **{'data-loading-text': 'Generating...'}) }}
-            </form>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section class="kpi-grid">
-    <div class="row g-3">
-      <div class="col-12 col-sm-6 col-xl-3">
-        <div class="kpi-card card shadow-soft h-100 card-tilt">
-          <div class="card-body d-flex align-items-center gap-3">
-            <div class="kpi-icon bg-primary-subtle text-primary"><i class="bi bi-building"></i></div>
-            <div>
-              <div class="h4 mb-0">{{ metrics.total_plants }}</div>
-              <p class="text-secondary mb-0 small">Plants | IU {{ metrics.iu_count }} | GU {{ metrics.gu_count }}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="col-12 col-sm-6 col-xl-3">
-        <div class="kpi-card card shadow-soft h-100 card-tilt">
-          <div class="card-body d-flex align-items-center gap-3">
-            <div class="kpi-icon bg-success-subtle text-success"><i class="bi bi-truck"></i></div>
-            <div>
-              <div class="h4 mb-0">{{ metrics.active_routes }}</div>
-              <p class="text-secondary mb-0 small">Active transport routes</p>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="col-12 col-sm-6 col-xl-3">
-        <div class="kpi-card card shadow-soft h-100 card-tilt">
-          <div class="card-body d-flex align-items-center gap-3">
-            <div class="kpi-icon bg-warning-subtle text-warning"><i class="bi bi-bell"></i></div>
-            <div>
-              <div class="h4 mb-0">{{ inventory_alerts|length }}</div>
-              <p class="text-secondary mb-0 small">Safety stock alerts</p>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="col-12 col-sm-6 col-xl-3">
-        <div class="kpi-card card shadow-soft h-100 card-tilt">
-          <div class="card-body d-flex align-items-center gap-3">
-            <div class="kpi-icon bg-info-subtle text-info"><i class="bi bi-cpu"></i></div>
-            <div>
-              <div class="h4 mb-0">{{ scenarios|length }}</div>
-              <p class="text-secondary mb-0 small">Scenarios tracked</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section class="row g-3">
-    <div class="col-12 col-lg-6">
-      <div class="card shadow-soft h-100 card-tilt">
-        <div class="card-body">
-          <div class="section-heading d-flex align-items-center gap-3 mb-2">
-            <div class="icon-chip icon-chip-info"><i class="bi bi-activity"></i></div>
-            <div>
-              <p class="text-uppercase text-secondary small mb-0">Inventory health</p>
-              <h2 class="h6 mb-0">Safety coverage snapshot</h2>
-            </div>
-          </div>
-          <p class="text-secondary small mb-3">Safe vs below-safety plants with quick visual split.</p>
-          {% set total = metrics.total_inventory or 1 %}
-          {% set safe_pct = (metrics.safe_inventory / total * 100) if metrics.total_inventory else 0 %}
-          {% set alert_pct = 100 - safe_pct %}
-          <div class="progress progress-slim mb-2">
-            <div class="progress-bar bg-success" role="progressbar" style="width: {{ safe_pct }}%"></div>
-            <div class="progress-bar bg-warning" role="progressbar" style="width: {{ alert_pct }}%"></div>
-          </div>
-          <div class="d-flex gap-3 mt-2 small text-secondary flex-wrap">
-            <span class="chip chip-success">Safe {{ metrics.safe_inventory }}</span>
-            <span class="chip chip-warning">Alerts {{ metrics.inventory_alerts }}</span>
-            <span class="chip chip-soft">Total {{ metrics.total_inventory }}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="col-12 col-lg-6">
-      <div class="card shadow-soft h-100 card-tilt">
-        <div class="card-body">
-          <div class="section-heading d-flex align-items-center gap-3 mb-2">
-            <div class="icon-chip icon-chip-purple"><i class="bi bi-bell"></i></div>
-            <div>
-              <p class="text-uppercase text-secondary small mb-0">Notifications</p>
-              <h2 class="h6 mb-0">Operational alerts</h2>
-            </div>
-            <span class="ms-auto chip chip-soft">Recent</span>
-          </div>
-          {% if notifications %}
-            <ul class="timeline list-unstyled mb-0 small">
-              {% for note in notifications %}
-                <li class="d-flex align-items-start gap-2 py-1 timeline-item">
-                  <span class="badge-dot bg-{{ 'danger' if note.severity=='critical' else ('warning' if note.severity=='warning' else 'info') }}"></span>
-                  <div>
-                    <div class="fw-semibold">{{ note.title }}</div>
-                    <div class="text-secondary">{{ note.body }}</div>
-                    <span class="text-secondary xsmall">{{ note.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
-                  </div>
-                </li>
-              {% endfor %}
-            </ul>
-            <form method="POST" action="{{ url_for('ops.manage_notifications') }}" class="mt-3 d-flex flex-wrap gap-2 align-items-center">
-              {{ notification_filter_form.csrf_token }}
-              {{ notification_filter_form.severity(class_='form-select form-select-sm input-premium') }}
-              <div class="form-check form-check-inline">
-                {{ notification_filter_form.unread_only(class_='form-check-input') }}
-                <label class="form-check-label small">Unread only</label>
-              </div>
-              <div class="form-check form-check-inline">
-                {{ notification_filter_form.acknowledge_all(class_='form-check-input') }}
-                <label class="form-check-label small">Mark all read</label>
-              </div>
-              {{ notification_filter_form.submit(class_='btn btn-outline-light btn-sm', **{'data-loading-text': 'Applying...'}) }}
-            </form>
-          {% else %}
-            <p class="text-secondary small mb-0">No notifications yet.</p>
-          {% endif %}
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section id="plants" class="card shadow-soft card-tilt">
+  <section id="iugu-types" class="card shadow-soft card-tilt">
     <div class="card-body">
-      <div class="section-header-luxe">
+      <div class="section-header-luxe d-flex align-items-start justify-content-between flex-wrap gap-3">
         <div class="d-flex align-items-start gap-2">
           <div class="icon-chip icon-chip-purple"><i class="bi bi-building"></i></div>
-          <div>
-            <p class="text-uppercase text-secondary small mb-1">Plants</p>
-            <h2 class="h6 mb-0">Integrated &amp; grinding units</h2>
-          </div>
+          <div><p class="text-uppercase text-secondary small mb-1">IUGU master</p><h2 class="h6 mb-0">IU/GU type register</h2></div>
         </div>
-        <div class="d-flex flex-wrap gap-2 ms-auto align-items-center">
-          <form class="d-flex flex-wrap gap-2 toolbar-soft" method="GET">
-            {{ plant_filters_form.csrf_token }}
-            {{ plant_filters_form.search(class_='form-control form-control-sm', placeholder='Search plant name') }}
-            {{ plant_filters_form.plant_type(class_='form-select form-select-sm') }}
-            {{ plant_filters_form.status(class_='form-select form-select-sm') }}
-            {{ plant_filters_form.region(class_='form-control form-control-sm', placeholder='Region') }}
-            {{ plant_filters_form.submit(class_='btn btn-outline-light btn-sm', **{'data-loading-text': 'Filtering...'}) }}
-          </form>
-          {% if current_user.is_org_admin %}
-            <button class="btn btn-primary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#newPlantForm"><i class="bi bi-plus-lg me-1"></i>New plant</button>
-          {% endif %}
-        </div>
+        <span class="chip chip-soft">Code · Type · Sources</span>
       </div>
-
       {% if current_user.is_org_admin %}
-        <div class="collapse mb-3" id="newPlantForm">
-          <div class="panel-tile">
-            <div class="d-flex align-items-center gap-2 mb-2">
-              <i class="bi bi-stars text-warning"></i>
-              <span class="small text-secondary">Capture a new plant</span>
-            </div>
-            <form method="POST" action="{{ url_for('ops.create_plant') }}" class="row g-3">
-              {{ plant_form.csrf_token }}
-              <div class="col-md-3">{{ plant_form.plant_name.label(class_='form-label small') }}{{ plant_form.plant_name(class_='form-control') }}</div>
-              <div class="col-md-2">{{ plant_form.plant_type.label(class_='form-label small') }}{{ plant_form.plant_type(class_='form-select') }}</div>
-              <div class="col-md-3">{{ plant_form.location.label(class_='form-label small') }}{{ plant_form.location(class_='form-control') }}</div>
-              <div class="col-md-2">{{ plant_form.status.label(class_='form-label small') }}{{ plant_form.status(class_='form-select') }}</div>
-              <div class="col-md-2 d-flex align-items-end">{{ plant_form.submit(class_='btn btn-primary w-100', **{'data-loading-text': 'Saving...'}) }}</div>
-              <div class="col-md-2">{{ plant_form.production_capacity.label(class_='form-label small') }}{{ plant_form.production_capacity(class_='form-control') }}</div>
-              <div class="col-md-2">{{ plant_form.consumption_capacity.label(class_='form-label small') }}{{ plant_form.consumption_capacity(class_='form-control') }}</div>
-              <div class="col-md-2">{{ plant_form.max_inventory_capacity.label(class_='form-label small') }}{{ plant_form.max_inventory_capacity(class_='form-control') }}</div>
-              <div class="col-md-2">{{ plant_form.safety_stock_level.label(class_='form-label small') }}{{ plant_form.safety_stock_level(class_='form-control') }}</div>
-            </form>
-          </div>
-        </div>
+      <form method="POST" action="{{ url_for('ops.create_iugu_type') }}" class="row g-2 align-items-end mb-3">
+        {{ iugu_type_form.csrf_token }}
+        <input type="hidden" name="workspace_id" value="{{ workspace.id }}">
+        <input type="hidden" name="dataset_id" value="{{ dataset.id }}">
+        <div class="col-sm-3">{{ iugu_type_form.code.label(class_='form-label small') }}{{ iugu_type_form.code(class_='form-control', placeholder='e.g. SATNA_IU') }}</div>
+        <div class="col-sm-3">{{ iugu_type_form.plant_type.label(class_='form-label small') }}{{ iugu_type_form.plant_type(class_='form-select') }}</div>
+        <div class="col-sm-3">{{ iugu_type_form.sources_count.label(class_='form-label small') }}{{ iugu_type_form.sources_count(class_='form-control', placeholder='optional') }}</div>
+        <div class="col-sm-3 d-flex align-items-end">{{ iugu_type_form.submit(class_='btn btn-primary w-100') }}</div>
+      </form>
+      <form method="POST" action="{{ url_for('ops.upload_iugu_type_csv') }}" class="row g-2 align-items-end mb-3" enctype="multipart/form-data">
+        {{ iugu_type_csv_form.csrf_token }}
+        {{ iugu_type_csv_form.workspace_id }}
+        {{ iugu_type_csv_form.dataset_id }}
+        <div class="col-md-8">{{ iugu_type_csv_form.file.label(class_='form-label small') }}{{ iugu_type_csv_form.file(class_='form-control form-control-sm') }}</div>
+        <div class="col-md-4 d-flex align-items-end">{{ iugu_type_csv_form.submit(class_='btn btn-outline-primary w-100 btn-sm', value='Upload CSV') }}</div>
+        <div class="col-12 text-secondary xsmall">Header: IUGU CODE, PLANT TYPE, # Source</div>
+      </form>
       {% endif %}
-
       <div class="table-responsive">
-        <table class="table table-premium table-hover align-middle mb-0">
-          <thead class="table-dark">
-            <tr>
-              <th>Name</th>
-              <th>Type</th>
-              <th>Location</th>
-              <th>Capacity</th>
-              <th>Inventory Caps</th>
-              <th>Status</th>
-              {% if current_user.is_org_admin %}<th class="text-end">Actions</th>{% endif %}
-            </tr>
-          </thead>
+        <table class="table table-premium align-middle mb-0">
+          <thead class="table-dark"><tr><th>Code</th><th>Type</th><th>Sources</th><th>Created</th></tr></thead>
           <tbody>
-            {% for plant in plants.items %}
-              <tr>
-                <td>{{ plant.plant_name }}</td>
-                <td><span class="chip chip-soft">{{ 'Integrated' if plant.plant_type=='IU' else 'Grinding' }}</span></td>
-                <td class="text-secondary small">{{ plant.location }}</td>
-                <td class="text-secondary small">Prod {{ plant.production_capacity }} | Cons {{ plant.consumption_capacity }}</td>
-                <td class="text-secondary small">Max {{ plant.max_inventory_capacity }} | Safety {{ plant.safety_stock_level }}</td>
-                <td><span class="chip chip-{{ 'info' if plant.status=='active' else 'soft' }}">{{ plant.status|capitalize }}</span></td>
-                {% if current_user.is_org_admin %}
-                  <td class="text-end">
-                    <form class="d-inline" method="POST" action="{{ url_for('ops.update_plant_status', plant_id=plant.id) }}">
-                      {{ plant_form.csrf_token }}
-                      <input type="hidden" name="status" value="{{ 'disabled' if plant.status=='active' else 'active' }}">
-                      <button class="btn btn-outline-light btn-sm" type="submit" data-loading-text="Updating...">{{ 'Disable' if plant.status=='active' else 'Activate' }}</button>
-                    </form>
-                    {% set p_form = plant_edit_forms.get(plant.id) %}
-                    {% if p_form %}
-                      <button class="btn btn-light btn-sm ms-1" type="button" data-bs-toggle="collapse" data-bs-target="#edit-plant-{{ plant.id }}">Edit</button>
-                    {% endif %}
-                  </td>
-                {% endif %}
-              </tr>
-              {% if current_user.is_org_admin and p_form %}
-                <tr class="collapse" id="edit-plant-{{ plant.id }}">
-                  <td colspan="7" class="bg-dark-subtle">
-                    <form method="POST" action="{{ url_for('ops.edit_plant', plant_id=plant.id) }}" class="row g-2 align-items-end">
-                      {{ p_form.csrf_token }}
-                      <div class="col-md-3">{{ p_form.plant_name.label(class_='form-label small text-secondary') }}{{ p_form.plant_name(class_='form-control form-control-sm', value=plant.plant_name) }}</div>
-                      <div class="col-md-2">{{ p_form.plant_type.label(class_='form-label small text-secondary') }}{{ p_form.plant_type(class_='form-select form-select-sm', value=plant.plant_type) }}</div>
-                      <div class="col-md-3">{{ p_form.location.label(class_='form-label small text-secondary') }}{{ p_form.location(class_='form-control form-control-sm', value=plant.location) }}</div>
-                      <div class="col-md-2">{{ p_form.status.label(class_='form-label small text-secondary') }}{{ p_form.status(class_='form-select form-select-sm', value=plant.status) }}</div>
-                      <div class="col-md-2">{{ p_form.production_capacity.label(class_='form-label small text-secondary') }}{{ p_form.production_capacity(class_='form-control form-control-sm', value=plant.production_capacity) }}</div>
-                      <div class="col-md-2">{{ p_form.consumption_capacity.label(class_='form-label small text-secondary') }}{{ p_form.consumption_capacity(class_='form-control form-control-sm', value=plant.consumption_capacity) }}</div>
-                      <div class="col-md-2">{{ p_form.max_inventory_capacity.label(class_='form-label small text-secondary') }}{{ p_form.max_inventory_capacity(class_='form-control form-control-sm', value=plant.max_inventory_capacity) }}</div>
-                      <div class="col-md-2">{{ p_form.safety_stock_level.label(class_='form-label small text-secondary') }}{{ p_form.safety_stock_level(class_='form-control form-control-sm', value=plant.safety_stock_level) }}</div>
-                      <div class="col-md-2 d-flex align-items-end">{{ p_form.submit(class_='btn btn-primary btn-sm w-100', **{'data-loading-text': 'Saving...'}) }}</div>
-                    </form>
-                  </td>
-                </tr>
-              {% endif %}
+            {% for row in iugu_types %}
+              <tr><td>{{ row.code }}</td><td>{{ row.plant_type }}</td><td>{{ row.sources_count or '—' }}</td><td class="text-secondary small">{{ row.created_at.strftime('%Y-%m-%d') }}</td></tr>
             {% endfor %}
-            {% if not plants.items %}
-              <tr><td colspan="7" class="text-center text-secondary py-4">No plants found.</td></tr>
-            {% endif %}
+            {% if not iugu_types %}<tr><td colspan="4" class="text-center text-secondary py-3">No IUGU types yet.</td></tr>{% endif %}
           </tbody>
         </table>
       </div>
-
-      <nav aria-label="Plants pagination" class="mt-3">
-        <ul class="pagination pagination-sm mb-0">
-          {% if plants.has_prev %}
-            <li class="page-item"><a class="page-link" href="{{ url_for('ops.network', page=plants.prev_num, plant_type=filters.type, plant_status=filters.status, q=filters.q) }}">Previous</a></li>
-          {% endif %}
-          <li class="page-item disabled"><span class="page-link">Page {{ plants.page }} of {{ plants.pages }}</span></li>
-          {% if plants.has_next %}
-            <li class="page-item"><a class="page-link" href="{{ url_for('ops.network', page=plants.next_num, plant_type=filters.type, plant_status=filters.status, q=filters.q) }}">Next</a></li>
-          {% endif %}
-        </ul>
-      </nav>
-    </div>
-  </section>
-
-  <section id="routes" class="card shadow-soft card-tilt">
-    <div class="card-body">
-      <div class="section-header-luxe">
-        <div class="d-flex align-items-start gap-2">
-          <div class="icon-chip icon-chip-info"><i class="bi bi-truck"></i></div>
-          <div>
-            <p class="text-uppercase text-secondary small mb-1">Transport</p>
-            <h2 class="h6 mb-0">Routes and constraints</h2>
-          </div>
+      <div class="d-flex justify-content-between align-items-center mt-2">
+        <span class="text-secondary xsmall">Showing {{ iugu_types|length }} of {{ iugu_types_page.total }}</span>
+        <div class="btn-group btn-group-sm" role="group">
+          <a class="btn btn-outline-secondary {% if not iugu_types_page.has_prev %}disabled{% endif %}" href="{% if iugu_types_page.has_prev %}{{ url_for('ops.network', workspace_id=workspace.id, dataset_id=dataset.id, iugu_page=iugu_types_page.prev_page) }}#iugu-types{% else %}#{% endif %}">Previous</a>
+          <a class="btn btn-outline-secondary {% if not iugu_types_page.has_next %}disabled{% endif %}" href="{% if iugu_types_page.has_next %}{{ url_for('ops.network', workspace_id=workspace.id, dataset_id=dataset.id, iugu_page=iugu_types_page.next_page) }}#iugu-types{% else %}#{% endif %}">Next</a>
         </div>
-        {% if current_user.is_org_admin %}
-          <button class="btn btn-outline-light btn-sm ms-auto" type="button" style="margin: 8px;" data-bs-toggle="collapse" data-bs-target="#newRouteForm"><i class="bi bi-truck me-2"></i>New route</button>
-        {% endif %}
-      </div>
-
-      {% if current_user.is_org_admin %}
-        <div class="collapse mb-3" id="newRouteForm">
-          <div class="panel-tile">
-            <div class="d-flex align-items-center gap-2 mb-2">
-              <i class="bi bi-signpost-2 text-info"></i>
-              <span class="small text-secondary">Define a transport route</span>
-            </div>
-            <form method="POST" action="{{ url_for('ops.create_route') }}" class="row g-3">
-              {{ route_form.csrf_token }}
-              <div class="col-md-3">{{ route_form.source_plant_id.label(class_='form-label small') }}{{ route_form.source_plant_id(class_='form-select') }}</div>
-              <div class="col-md-3">{{ route_form.destination_plant_id.label(class_='form-label small') }}{{ route_form.destination_plant_id(class_='form-select') }}</div>
-              <div class="col-md-2">{{ route_form.mode.label(class_='form-label small') }}{{ route_form.mode(class_='form-select') }}</div>
-              <div class="col-md-2">{{ route_form.status.label(class_='form-label small') }}{{ route_form.status(class_='form-select') }}</div>
-              <div class="col-md-2 d-flex align-items-end">{{ route_form.submit(class_='btn btn-primary w-100', **{'data-loading-text': 'Saving...'}) }}</div>
-              <div class="col-md-2">{{ route_form.trip_capacity.label(class_='form-label small') }}{{ route_form.trip_capacity(class_='form-control') }}</div>
-              <div class="col-md-2">{{ route_form.min_batch_quantity.label(class_='form-label small') }}{{ route_form.min_batch_quantity(class_='form-control') }}</div>
-              <div class="col-md-2">{{ route_form.max_trips_per_period.label(class_='form-label small') }}{{ route_form.max_trips_per_period(class_='form-control') }}</div>
-              <div class="col-md-2">{{ route_form.cost_per_trip.label(class_='form-label small') }}{{ route_form.cost_per_trip(class_='form-control') }}</div>
-            </form>
-          </div>
-        </div>
-      {% endif %}
-
-      <div class="table-responsive">
-        <table class="table table-premium table-hover align-middle mb-0">
-          <thead class="table-dark">
-            <tr>
-              <th>Route</th>
-              <th>Mode</th>
-              <th>Trip rules</th>
-              <th>Cost</th>
-              <th>Status</th>
-              {% if current_user.is_org_admin %}<th class="text-end">Actions</th>{% endif %}
-            </tr>
-          </thead>
-          <tbody>
-            {% for route in routes %}
-              <tr>
-                <td>{{ route.source_plant.plant_name }} -> {{ route.destination_plant.plant_name }}</td>
-                <td><span class="chip chip-info">{{ route.mode }}</span></td>
-                <td class="text-secondary small">Cap {{ route.trip_capacity }} | Min batch {{ route.min_batch_quantity }} | Trips/period {{ route.max_trips_per_period }}</td>
-                <td class="text-secondary small">{{ route.cost_per_trip }}</td>
-                <td><span class="chip chip-{{ 'info' if route.status=='active' else 'soft' }}">{{ route.status|capitalize }}</span></td>
-                {% if current_user.is_org_admin %}
-                  <td class="text-end">
-                    <form class="d-inline" method="POST" action="{{ url_for('ops.update_route_status', route_id=route.id) }}">
-                      {{ route_form.csrf_token }}
-                      <input type="hidden" name="status" value="{{ 'disabled' if route.status=='active' else 'active' }}">
-                      <button class="btn btn-outline-light btn-sm" type="submit" data-loading-text="Updating...">{{ 'Disable' if route.status=='active' else 'Activate' }}</button>
-                    </form>
-                    {% set r_form = route_edit_forms.get(route.id) %}
-                    {% if r_form %}
-                      <button class="btn btn-light btn-sm ms-1" type="button" data-bs-toggle="collapse" data-bs-target="#edit-route-{{ route.id }}">Edit</button>
-                    {% endif %}
-                  </td>
-                {% endif %}
-              </tr>
-              {% if current_user.is_org_admin and r_form %}
-                <tr class="collapse" id="edit-route-{{ route.id }}">
-                  <td colspan="6" class="bg-dark-subtle">
-                    <form method="POST" action="{{ url_for('ops.edit_route', route_id=route.id) }}" class="row g-2 align-items-end">
-                      {{ r_form.csrf_token }}
-                      <div class="col-md-3">{{ r_form.source_plant_id.label(class_='form-label small text-secondary') }}{{ r_form.source_plant_id(class_='form-select form-select-sm', value=route.source_plant_id) }}</div>
-                      <div class="col-md-3">{{ r_form.destination_plant_id.label(class_='form-label small text-secondary') }}{{ r_form.destination_plant_id(class_='form-select form-select-sm', value=route.destination_plant_id) }}</div>
-                      <div class="col-md-2">{{ r_form.mode.label(class_='form-label small text-secondary') }}{{ r_form.mode(class_='form-select form-select-sm', value=route.mode) }}</div>
-                      <div class="col-md-2">{{ r_form.status.label(class_='form-label small text-secondary') }}{{ r_form.status(class_='form-select form-select-sm', value=route.status) }}</div>
-                      <div class="col-md-2">{{ r_form.trip_capacity.label(class_='form-label small text-secondary') }}{{ r_form.trip_capacity(class_='form-control form-control-sm', value=route.trip_capacity) }}</div>
-                      <div class="col-md-2">{{ r_form.min_batch_quantity.label(class_='form-label small text-secondary') }}{{ r_form.min_batch_quantity(class_='form-control form-control-sm', value=route.min_batch_quantity) }}</div>
-                      <div class="col-md-2">{{ r_form.max_trips_per_period.label(class_='form-label small text-secondary') }}{{ r_form.max_trips_per_period(class_='form-control form-control-sm', value=route.max_trips_per_period) }}</div>
-                      <div class="col-md-2">{{ r_form.cost_per_trip.label(class_='form-label small text-secondary') }}{{ r_form.cost_per_trip(class_='form-control form-control-sm', value=route.cost_per_trip) }}</div>
-                      <div class="col-md-2 d-flex align-items-end">{{ r_form.submit(class_='btn btn-primary btn-sm w-100', **{'data-loading-text': 'Saving...'}) }}</div>
-                    </form>
-                  </td>
-                </tr>
-              {% endif %}
-            {% endfor %}
-            {% if not routes %}
-              <tr><td colspan="6" class="text-center text-secondary py-4">No transport routes captured.</td></tr>
-            {% endif %}
-          </tbody>
-        </table>
       </div>
     </div>
   </section>
 
-  <section id="inventory" class="card shadow-soft card-tilt">
+  <section id="clinker-demand" class="card shadow-soft card-tilt">
     <div class="card-body">
-      <div class="section-header-luxe">
-        <div class="d-flex align-items-start gap-2">
-          <div class="icon-chip icon-chip-info"><i class="bi bi-box-seam"></i></div>
-          <div>
-            <p class="text-uppercase text-secondary small mb-1">Inventory</p>
-            <h2 class="h6 mb-0">Safety stock compliance</h2>
-          </div>
-        </div>
-        <div class="d-flex flex-wrap gap-2 ms-auto">
-          <button class="btn btn-outline-light btn-sm" style="margin: 8px;" type="button" data-bs-toggle="collapse" data-bs-target="#inventoryForm"><i class="bi bi-pencil me-2"></i>Update stock</button>
-        </div>
+      <div class="section-header-luxe d-flex align-items-start justify-content-between flex-wrap gap-3">
+        <div class="d-flex align-items-start gap-2"><div class="icon-chip icon-chip-info"><i class="bi bi-clipboard-data"></i></div><div><p class="text-uppercase text-secondary small mb-1">Demand</p><h2 class="h6 mb-0">Clinker demand by period</h2></div></div>
+        <span class="chip chip-soft">3 periods · IU/GU codes</span>
       </div>
-
-      <div class="collapse mb-3" id="inventoryForm">
-        <div class="panel-tile">
-          <div class="d-flex align-items-center gap-2 mb-2">
-            <i class="bi bi-box text-info"></i>
-            <span class="small text-secondary">Refresh inventory levels</span>
-          </div>
-          <form method="POST" action="{{ url_for('ops.update_inventory') }}" class="row g-3">
-            {{ inventory_form.csrf_token }}
-            <div class="col-md-4">{{ inventory_form.plant_id.label(class_='form-label small') }}{{ inventory_form.plant_id(class_='form-select') }}</div>
-            <div class="col-md-3">{{ inventory_form.current_inventory.label(class_='form-label small') }}{{ inventory_form.current_inventory(class_='form-control') }}</div>
-            <div class="col-md-2 d-flex align-items-end">{{ inventory_form.submit(class_='btn btn-primary w-100', **{'data-loading-text': 'Updating...'}) }}</div>
-          </form>
-        </div>
-      </div>
-
+      {% if current_user.is_org_admin %}
+      <form method="POST" action="{{ url_for('ops.create_clinker_demand') }}" class="row g-2 align-items-end mb-3">
+        {{ clinker_demand_form.csrf_token }}
+        <input type="hidden" name="workspace_id" value="{{ workspace.id }}">
+        <input type="hidden" name="dataset_id" value="{{ dataset.id }}">
+        <div class="col-md-3">{{ clinker_demand_form.plant_code.label(class_='form-label small') }}{{ clinker_demand_form.plant_code(class_='form-control', placeholder='IUGU code') }}</div>
+        <div class="col-md-2">{{ clinker_demand_form.time_period.label(class_='form-label small') }}{{ clinker_demand_form.time_period(class_='form-select') }}</div>
+        <div class="col-md-3">{{ clinker_demand_form.demand_tons.label(class_='form-label small') }}{{ clinker_demand_form.demand_tons(class_='form-control', placeholder='tons') }}</div>
+        <div class="col-md-3">{{ clinker_demand_form.min_fulfillment_pct.label(class_='form-label small') }}{{ clinker_demand_form.min_fulfillment_pct(class_='form-control', placeholder='default 100') }}</div>
+        <div class="col-md-1 d-flex align-items-end">{{ clinker_demand_form.submit(class_='btn btn-primary w-100') }}</div>
+      </form>
+      <form method="POST" action="{{ url_for('ops.upload_clinker_demand_csv') }}" class="row g-2 align-items-end mb-3" enctype="multipart/form-data">
+        {{ clinker_demand_csv_form.csrf_token }}
+        {{ clinker_demand_csv_form.workspace_id }}
+        {{ clinker_demand_csv_form.dataset_id }}
+        <div class="col-md-8">{{ clinker_demand_csv_form.file.label(class_='form-label small') }}{{ clinker_demand_csv_form.file(class_='form-control form-control-sm') }}</div>
+        <div class="col-md-4 d-flex align-items-end">{{ clinker_demand_csv_form.submit(class_='btn btn-outline-primary w-100 btn-sm', value='Upload CSV') }}</div>
+        <div class="col-12 text-secondary xsmall">Header: ClinkerDemand → IUGU CODE, TIME PERIOD, DEMAND, MIN FULFILLMENT (%)</div>
+      </form>
+      {% endif %}
       <div class="table-responsive">
-        <table class="table table-premium table-hover align-middle mb-0">
-          <thead class="table-dark">
-            <tr>
-              <th>Plant</th>
-              <th>Current</th>
-              <th>Max capacity</th>
-              <th>Safety stock</th>
-              <th>Utilization</th>
-              <th>Status</th>
-              <th class="text-end">Actions</th>
-            </tr>
-          </thead>
+        <table class="table table-premium align-middle mb-0">
+          <thead class="table-dark"><tr><th>IUGU</th><th>Period</th><th>Demand</th><th>Min %</th></tr></thead>
           <tbody>
-            {% for inv in inventories %}
-              <tr>
-                <td>{{ inv.plant.plant_name }}</td>
-                <td>{{ inv.current_inventory }}</td>
-                <td class="text-secondary small">{{ inv.plant.max_inventory_capacity }}</td>
-                <td class="text-secondary small">{{ inv.plant.safety_stock_level }}</td>
-                <td class="text-secondary small">{{ inv.utilization_pct }}%</td>
-                <td>
-                  {% if inv.below_safety %}
-                    <span class="chip chip-warning">Below safety</span>
-                  {% else %}
-                    <span class="chip chip-info">OK</span>
-                  {% endif %}
-                </td>
-                <td class="text-end">
-                  {% set i_form = inventory_edit_forms.get(inv.id) %}
-                  {% if i_form %}
-                    <button class="btn btn-light btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#edit-inventory-{{ inv.id }}">Edit</button>
-                  {% endif %}
-                </td>
-              </tr>
-              {% if i_form %}
-                <tr class="collapse" id="edit-inventory-{{ inv.id }}">
-                  <td colspan="7" class="bg-dark-subtle">
-                    <form method="POST" action="{{ url_for('ops.update_inventory') }}" class="row g-2 align-items-end">
-                      {{ i_form.csrf_token }}
-                      <div class="col-md-4">{{ i_form.plant_id.label(class_='form-label small text-secondary') }}{{ i_form.plant_id(class_='form-select form-select-sm', value=inv.plant_id) }}</div>
-                      <div class="col-md-3">{{ i_form.current_inventory.label(class_='form-label small text-secondary') }}{{ i_form.current_inventory(class_='form-control form-control-sm', value=inv.current_inventory) }}</div>
-                      <div class="col-md-2 d-flex align-items-end">{{ i_form.submit(class_='btn btn-primary btn-sm w-100', **{'data-loading-text': 'Saving...'}) }}</div>
-                    </form>
-                  </td>
-                </tr>
-              {% endif %}
+            {% for row in clinker_demands %}
+              <tr><td>{{ row.plant_code }}</td><td>{{ row.time_period }}</td><td>{{ row.demand_tons }}</td><td>{{ row.min_fulfillment_pct or 100 }}%</td></tr>
             {% endfor %}
-            {% if not inventories %}
-              <tr><td colspan="6" class="text-center text-secondary py-4">No inventory snapshots yet.</td></tr>
-            {% endif %}
+            {% if not clinker_demands %}<tr><td colspan="4" class="text-center text-secondary py-3">No demand captured.</td></tr>{% endif %}
           </tbody>
         </table>
+      </div>
+      <div class="d-flex justify-content-between align-items-center mt-2">
+        <span class="text-secondary xsmall">Showing {{ clinker_demands|length }} of {{ clinker_demands_page.total }}</span>
+        <div class="btn-group btn-group-sm" role="group">
+          <a class="btn btn-outline-secondary {% if not clinker_demands_page.has_prev %}disabled{% endif %}" href="{% if clinker_demands_page.has_prev %}{{ url_for('ops.network', workspace_id=workspace.id, dataset_id=dataset.id, demand_page=clinker_demands_page.prev_page) }}#clinker-demand{% else %}#{% endif %}">Previous</a>
+          <a class="btn btn-outline-secondary {% if not clinker_demands_page.has_next %}disabled{% endif %}" href="{% if clinker_demands_page.has_next %}{{ url_for('ops.network', workspace_id=workspace.id, dataset_id=dataset.id, demand_page=clinker_demands_page.next_page) }}#clinker-demand{% else %}#{% endif %}">Next</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="clinker-capacity" class="card shadow-soft card-tilt">
+    <div class="card-body">
+      <div class="section-header-luxe d-flex align-items-start justify-content-between flex-wrap gap-3">
+        <div class="d-flex align-items-start gap-2"><div class="icon-chip icon-chip-success"><i class="bi bi-speedometer"></i></div><div><p class="text-uppercase text-secondary small mb-1">Capacity</p><h2 class="h6 mb-0">Clinker production/throughput</h2></div></div>
+        <span class="chip chip-soft">3 periods</span>
+      </div>
+      {% if current_user.is_org_admin %}
+      <form method="POST" action="{{ url_for('ops.create_clinker_capacity') }}" class="row g-2 align-items-end mb-3">
+        {{ clinker_capacity_form.csrf_token }}
+        <input type="hidden" name="workspace_id" value="{{ workspace.id }}">
+        <input type="hidden" name="dataset_id" value="{{ dataset.id }}">
+        <div class="col-md-4">{{ clinker_capacity_form.plant_code.label(class_='form-label small') }}{{ clinker_capacity_form.plant_code(class_='form-control', placeholder='IUGU code') }}</div>
+        <div class="col-md-2">{{ clinker_capacity_form.time_period.label(class_='form-label small') }}{{ clinker_capacity_form.time_period(class_='form-select') }}</div>
+        <div class="col-md-4">{{ clinker_capacity_form.capacity_tons.label(class_='form-label small') }}{{ clinker_capacity_form.capacity_tons(class_='form-control', placeholder='tons') }}</div>
+        <div class="col-md-2 d-flex align-items-end">{{ clinker_capacity_form.submit(class_='btn btn-primary w-100') }}</div>
+      </form>
+      <form method="POST" action="{{ url_for('ops.upload_clinker_capacity_csv') }}" class="row g-2 align-items-end mb-3" enctype="multipart/form-data">
+        {{ clinker_capacity_csv_form.csrf_token }}
+        {{ clinker_capacity_csv_form.workspace_id }}
+        {{ clinker_capacity_csv_form.dataset_id }}
+        <div class="col-md-8">{{ clinker_capacity_csv_form.file.label(class_='form-label small') }}{{ clinker_capacity_csv_form.file(class_='form-control form-control-sm') }}</div>
+        <div class="col-md-4 d-flex align-items-end">{{ clinker_capacity_csv_form.submit(class_='btn btn-outline-primary w-100 btn-sm', value='Upload CSV') }}</div>
+        <div class="col-12 text-secondary xsmall">Header: ClinkerCapacity → IU CODE, TIME PERIOD, CAPACITY</div>
+      </form>
+      {% endif %}
+      <div class="table-responsive">
+        <table class="table table-premium align-middle mb-0">
+          <thead class="table-dark"><tr><th>IUGU</th><th>Period</th><th>Capacity (tons)</th></tr></thead>
+          <tbody>
+            {% for row in clinker_capacities %}
+              <tr><td>{{ row.plant_code }}</td><td>{{ row.time_period }}</td><td>{{ row.capacity_tons }}</td></tr>
+            {% endfor %}
+            {% if not clinker_capacities %}<tr><td colspan="3" class="text-center text-secondary py-3">No capacity rows.</td></tr>{% endif %}
+          </tbody>
+        </table>
+      </div>
+      <div class="d-flex justify-content-between align-items-center mt-2">
+        <span class="text-secondary xsmall">Showing {{ clinker_capacities|length }} of {{ clinker_capacities_page.total }}</span>
+        <div class="btn-group btn-group-sm" role="group">
+          <a class="btn btn-outline-secondary {% if not clinker_capacities_page.has_prev %}disabled{% endif %}" href="{% if clinker_capacities_page.has_prev %}{{ url_for('ops.network', workspace_id=workspace.id, dataset_id=dataset.id, capacity_page=clinker_capacities_page.prev_page) }}#clinker-capacity{% else %}#{% endif %}">Previous</a>
+          <a class="btn btn-outline-secondary {% if not clinker_capacities_page.has_next %}disabled{% endif %}" href="{% if clinker_capacities_page.has_next %}{{ url_for('ops.network', workspace_id=workspace.id, dataset_id=dataset.id, capacity_page=clinker_capacities_page.next_page) }}#clinker-capacity{% else %}#{% endif %}">Next</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="production-cost" class="card shadow-soft card-tilt">
+    <div class="card-body">
+      <div class="section-header-luxe d-flex align-items-start justify-content-between flex-wrap gap-3">
+        <div class="d-flex align-items-start gap-2"><div class="icon-chip icon-chip-amber"><i class="bi bi-cash-coin"></i></div><div><p class="text-uppercase text-secondary small mb-1">Production cost</p><h2 class="h6 mb-0">Cost per ton by period</h2></div></div>
+        <span class="chip chip-soft">Currency/ton</span>
+      </div>
+      {% if current_user.is_org_admin %}
+      <form method="POST" action="{{ url_for('ops.create_production_cost') }}" class="row g-2 align-items-end mb-3">
+        {{ production_cost_form.csrf_token }}
+        <input type="hidden" name="workspace_id" value="{{ workspace.id }}">
+        <input type="hidden" name="dataset_id" value="{{ dataset.id }}">
+        <div class="col-md-4">{{ production_cost_form.plant_code.label(class_='form-label small') }}{{ production_cost_form.plant_code(class_='form-control', placeholder='IUGU code') }}</div>
+        <div class="col-md-2">{{ production_cost_form.time_period.label(class_='form-label small') }}{{ production_cost_form.time_period(class_='form-select') }}</div>
+        <div class="col-md-4">{{ production_cost_form.cost_per_ton.label(class_='form-label small') }}{{ production_cost_form.cost_per_ton(class_='form-control', placeholder='per ton') }}</div>
+        <div class="col-md-2 d-flex align-items-end">{{ production_cost_form.submit(class_='btn btn-primary w-100') }}</div>
+      </form>
+      <form method="POST" action="{{ url_for('ops.upload_production_cost_csv') }}" class="row g-2 align-items-end mb-3" enctype="multipart/form-data">
+        {{ production_cost_csv_form.csrf_token }}
+        {{ production_cost_csv_form.workspace_id }}
+        {{ production_cost_csv_form.dataset_id }}
+        <div class="col-md-8">{{ production_cost_csv_form.file.label(class_='form-label small') }}{{ production_cost_csv_form.file(class_='form-control form-control-sm') }}</div>
+        <div class="col-md-4 d-flex align-items-end">{{ production_cost_csv_form.submit(class_='btn btn-outline-primary w-100 btn-sm', value='Upload CSV') }}</div>
+        <div class="col-12 text-secondary xsmall">Header: ProductionCost → IU CODE, TIME PERIOD, PRODUCTION COST</div>
+      </form>
+      {% endif %}
+      <div class="table-responsive">
+        <table class="table table-premium align-middle mb-0">
+          <thead class="table-dark"><tr><th>IUGU</th><th>Period</th><th>Cost/ton</th></tr></thead>
+          <tbody>
+            {% for row in production_costs %}
+              <tr><td>{{ row.plant_code }}</td><td>{{ row.time_period }}</td><td>{{ row.cost_per_ton }}</td></tr>
+            {% endfor %}
+            {% if not production_costs %}<tr><td colspan="3" class="text-center text-secondary py-3">No production costs.</td></tr>{% endif %}
+          </tbody>
+        </table>
+      </div>
+      <div class="d-flex justify-content-between align-items-center mt-2">
+        <span class="text-secondary xsmall">Showing {{ production_costs|length }} of {{ production_costs_page.total }}</span>
+        <div class="btn-group btn-group-sm" role="group">
+          <a class="btn btn-outline-secondary {% if not production_costs_page.has_prev %}disabled{% endif %}" href="{% if production_costs_page.has_prev %}{{ url_for('ops.network', workspace_id=workspace.id, dataset_id=dataset.id, prod_page=production_costs_page.prev_page) }}#production-cost{% else %}#{% endif %}">Previous</a>
+          <a class="btn btn-outline-secondary {% if not production_costs_page.has_next %}disabled{% endif %}" href="{% if production_costs_page.has_next %}{{ url_for('ops.network', workspace_id=workspace.id, dataset_id=dataset.id, prod_page=production_costs_page.next_page) }}#production-cost{% else %}#{% endif %}">Next</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="logistics-iugu" class="card shadow-soft card-tilt">
+    <div class="card-body">
+      <div class="section-header-luxe d-flex align-items-start justify-content-between flex-wrap gap-3">
+        <div class="d-flex align-items-start gap-2"><div class="icon-chip icon-chip-info"><i class="bi bi-truck"></i></div><div><p class="text-uppercase text-secondary small mb-1">Logistics</p><h2 class="h6 mb-0">Routes and costs</h2></div></div>
+        <span class="chip chip-soft">From/To · Mode code · Period</span>
+      </div>
+      {% if current_user.is_org_admin %}
+      <form method="POST" action="{{ url_for('ops.create_logistics_iugu') }}" class="row g-2 align-items-end mb-3">
+        {{ logistics_form.csrf_token }}
+        <input type="hidden" name="workspace_id" value="{{ workspace.id }}">
+        <input type="hidden" name="dataset_id" value="{{ dataset.id }}">
+        <div class="col-md-2">{{ logistics_form.from_code.label(class_='form-label small') }}{{ logistics_form.from_code(class_='form-control', placeholder='From') }}</div>
+        <div class="col-md-2">{{ logistics_form.to_code.label(class_='form-label small') }}{{ logistics_form.to_code(class_='form-control', placeholder='To') }}</div>
+        <div class="col-md-2">{{ logistics_form.transport_code.label(class_='form-label small') }}{{ logistics_form.transport_code(class_='form-control', placeholder='Mode code') }}</div>
+        <div class="col-md-1">{{ logistics_form.time_period.label(class_='form-label small') }}{{ logistics_form.time_period(class_='form-select') }}</div>
+        <div class="col-md-2">{{ logistics_form.freight_cost.label(class_='form-label small') }}{{ logistics_form.freight_cost(class_='form-control', placeholder='Freight') }}</div>
+        <div class="col-md-2">{{ logistics_form.handling_cost.label(class_='form-label small') }}{{ logistics_form.handling_cost(class_='form-control', placeholder='Handling') }}</div>
+        <div class="col-md-1">{{ logistics_form.quantity_multiplier.label(class_='form-label small') }}{{ logistics_form.quantity_multiplier(class_='form-control', placeholder='x') }}</div>
+        <div class="col-md-12 col-lg-12 col-xl-12 text-end">{{ logistics_form.submit(class_='btn btn-primary') }}</div>
+      </form>
+      <form method="POST" action="{{ url_for('ops.upload_logistics_iugu_csv') }}" class="row g-2 align-items-end mb-3" enctype="multipart/form-data">
+        {{ logistics_csv_form.csrf_token }}
+        {{ logistics_csv_form.workspace_id }}
+        {{ logistics_csv_form.dataset_id }}
+        <div class="col-md-8">{{ logistics_csv_form.file.label(class_='form-label small') }}{{ logistics_csv_form.file(class_='form-control form-control-sm') }}</div>
+        <div class="col-md-4 d-flex align-items-end">{{ logistics_csv_form.submit(class_='btn btn-outline-primary w-100 btn-sm', value='Upload CSV') }}</div>
+        <div class="col-12 text-secondary xsmall">Header: LogisticsIUGU → FROM IU CODE, TO IUGU CODE, TRANSPORT CODE, TIME PERIOD, FREIGHT COST, HANDLING COST, QUANTITY MULTIPLIER</div>
+      </form>
+      {% endif %}
+      <div class="table-responsive">
+        <table class="table table-premium align-middle mb-0">
+          <thead class="table-dark"><tr><th>From</th><th>To</th><th>Transport</th><th>Period</th><th>Freight</th><th>Handling</th><th>Multiplier</th></tr></thead>
+          <tbody>
+            {% for row in logistics_records %}
+              <tr><td>{{ row.from_code }}</td><td>{{ row.to_code }}</td><td>{{ row.transport_code }}</td><td>{{ row.time_period }}</td><td>{{ row.freight_cost }}</td><td>{{ row.handling_cost }}</td><td>{{ row.quantity_multiplier }}</td></tr>
+            {% endfor %}
+            {% if not logistics_records %}<tr><td colspan="7" class="text-center text-secondary py-3">No logistics rows.</td></tr>{% endif %}
+          </tbody>
+        </table>
+      </div>
+      <div class="d-flex justify-content-between align-items-center mt-2">
+        <span class="text-secondary xsmall">Showing {{ logistics_records|length }} of {{ logistics_records_page.total }}</span>
+        <div class="btn-group btn-group-sm" role="group">
+          <a class="btn btn-outline-secondary {% if not logistics_records_page.has_prev %}disabled{% endif %}" href="{% if logistics_records_page.has_prev %}{{ url_for('ops.network', workspace_id=workspace.id, dataset_id=dataset.id, logistics_page=logistics_records_page.prev_page) }}#logistics-iugu{% else %}#{% endif %}">Previous</a>
+          <a class="btn btn-outline-secondary {% if not logistics_records_page.has_next %}disabled{% endif %}" href="{% if logistics_records_page.has_next %}{{ url_for('ops.network', workspace_id=workspace.id, dataset_id=dataset.id, logistics_page=logistics_records_page.next_page) }}#logistics-iugu{% else %}#{% endif %}">Next</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="iugu-constraint" class="card shadow-soft card-tilt">
+    <div class="card-body">
+      <div class="section-header-luxe d-flex align-items-start justify-content-between flex-wrap gap-3">
+        <div class="d-flex align-items-start gap-2"><div class="icon-chip icon-chip-purple"><i class="bi bi-diagram-3"></i></div><div><p class="text-uppercase text-secondary small mb-1">Constraints</p><h2 class="h6 mb-0">Route and node constraints</h2></div></div>
+        <span class="chip chip-soft">L/G/E · Capacity</span>
+      </div>
+      {% if current_user.is_org_admin %}
+      <form method="POST" action="{{ url_for('ops.create_iugu_constraint') }}" class="row g-2 align-items-end mb-3">
+        {{ constraint_form.csrf_token }}
+        <input type="hidden" name="workspace_id" value="{{ workspace.id }}">
+        <input type="hidden" name="dataset_id" value="{{ dataset.id }}">
+        <div class="col-md-2">{{ constraint_form.from_code.label(class_='form-label small') }}{{ constraint_form.from_code(class_='form-control', placeholder='From') }}</div>
+        <div class="col-md-2">{{ constraint_form.to_code.label(class_='form-label small') }}{{ constraint_form.to_code(class_='form-control', placeholder='To (optional)') }}</div>
+        <div class="col-md-2">{{ constraint_form.transport_code.label(class_='form-label small') }}{{ constraint_form.transport_code(class_='form-control', placeholder='Transport code') }}</div>
+        <div class="col-md-1">{{ constraint_form.time_period.label(class_='form-label small') }}{{ constraint_form.time_period(class_='form-select') }}</div>
+        <div class="col-md-1">{{ constraint_form.constraint_type.label(class_='form-label small') }}{{ constraint_form.constraint_type(class_='form-select') }}</div>
+        <div class="col-md-1">{{ constraint_form.value_type.label(class_='form-label small') }}{{ constraint_form.value_type(class_='form-select') }}</div>
+        <div class="col-md-2">{{ constraint_form.value.label(class_='form-label small') }}{{ constraint_form.value(class_='form-control', placeholder='value') }}</div>
+        <div class="col-md-1 d-flex align-items-end">{{ constraint_form.submit(class_='btn btn-primary w-100') }}</div>
+      </form>
+      <form method="POST" action="{{ url_for('ops.upload_iugu_constraint_csv') }}" class="row g-2 align-items-end mb-3" enctype="multipart/form-data">
+        {{ constraint_csv_form.csrf_token }}
+        {{ constraint_csv_form.workspace_id }}
+        {{ constraint_csv_form.dataset_id }}
+        <div class="col-md-8">{{ constraint_csv_form.file.label(class_='form-label small') }}{{ constraint_csv_form.file(class_='form-control form-control-sm') }}</div>
+        <div class="col-md-4 d-flex align-items-end">{{ constraint_csv_form.submit(class_='btn btn-outline-primary w-100 btn-sm', value='Upload CSV') }}</div>
+        <div class="col-12 text-secondary xsmall">Header: IUGUConstraint → IU CODE, TRANSPORT CODE, IUGU CODE, TIME PERIOD, BOUND TYPEID, VALUE TYPEID, Value</div>
+      </form>
+      {% endif %}
+      <div class="table-responsive">
+        <table class="table table-premium align-middle mb-0">
+          <thead class="table-dark"><tr><th>From</th><th>To</th><th>Transport</th><th>Period</th><th>Type</th><th>Value</th></tr></thead>
+          <tbody>
+            {% for row in constraint_records %}
+              <tr><td>{{ row.from_code }}</td><td>{{ row.to_code or '—' }}</td><td>{{ row.transport_code or '—' }}</td><td>{{ row.time_period }}</td><td>{{ row.constraint_type }}</td><td>{{ row.value }}</td></tr>
+            {% endfor %}
+            {% if not constraint_records %}<tr><td colspan="6" class="text-center text-secondary py-3">No constraints defined.</td></tr>{% endif %}
+          </tbody>
+        </table>
+      </div>
+      <div class="d-flex justify-content-between align-items-center mt-2">
+        <span class="text-secondary xsmall">Showing {{ constraint_records|length }} of {{ constraint_records_page.total }}</span>
+        <div class="btn-group btn-group-sm" role="group">
+          <a class="btn btn-outline-secondary {% if not constraint_records_page.has_prev %}disabled{% endif %}" href="{% if constraint_records_page.has_prev %}{{ url_for('ops.network', workspace_id=workspace.id, dataset_id=dataset.id, constraint_page=constraint_records_page.prev_page) }}#iugu-constraint{% else %}#{% endif %}">Previous</a>
+          <a class="btn btn-outline-secondary {% if not constraint_records_page.has_next %}disabled{% endif %}" href="{% if constraint_records_page.has_next %}{{ url_for('ops.network', workspace_id=workspace.id, dataset_id=dataset.id, constraint_page=constraint_records_page.next_page) }}#iugu-constraint{% else %}#{% endif %}">Next</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="iugu-opening-stock" class="card shadow-soft card-tilt">
+    <div class="card-body">
+      <div class="section-header-luxe d-flex align-items-start justify-content-between flex-wrap gap-3">
+        <div class="d-flex align-items-start gap-2"><div class="icon-chip icon-chip-success"><i class="bi bi-box"></i></div><div><p class="text-uppercase text-secondary small mb-1">Opening stock</p><h2 class="h6 mb-0">IUGU opening positions</h2></div></div>
+        <span class="chip chip-soft">Period 0</span>
+      </div>
+      {% if current_user.is_org_admin %}
+      <form method="POST" action="{{ url_for('ops.create_iugu_opening_stock') }}" class="row g-2 align-items-end mb-3">
+        {{ iugu_opening_form.csrf_token }}
+        <input type="hidden" name="workspace_id" value="{{ workspace.id }}">
+        <input type="hidden" name="dataset_id" value="{{ dataset.id }}">
+        <div class="col-md-6">{{ iugu_opening_form.plant_code.label(class_='form-label small') }}{{ iugu_opening_form.plant_code(class_='form-control', placeholder='IUGU code') }}</div>
+        <div class="col-md-4">{{ iugu_opening_form.opening_stock.label(class_='form-label small') }}{{ iugu_opening_form.opening_stock(class_='form-control', placeholder='tons') }}</div>
+        <div class="col-md-2 d-flex align-items-end">{{ iugu_opening_form.submit(class_='btn btn-primary w-100') }}</div>
+      </form>
+      <form method="POST" action="{{ url_for('ops.upload_iugu_opening_stock_csv') }}" class="row g-2 align-items-end mb-3" enctype="multipart/form-data">
+        {{ iugu_opening_csv_form.csrf_token }}
+        {{ iugu_opening_csv_form.workspace_id }}
+        {{ iugu_opening_csv_form.dataset_id }}
+        <div class="col-md-8">{{ iugu_opening_csv_form.file.label(class_='form-label small') }}{{ iugu_opening_csv_form.file(class_='form-control form-control-sm') }}</div>
+        <div class="col-md-4 d-flex align-items-end">{{ iugu_opening_csv_form.submit(class_='btn btn-outline-primary w-100 btn-sm', value='Upload CSV') }}</div>
+        <div class="col-12 text-secondary xsmall">Header: IUGUOpeningStock → IUGU CODE, OPENING STOCK</div>
+      </form>
+      {% endif %}
+      <div class="table-responsive">
+        <table class="table table-premium align-middle mb-0">
+          <thead class="table-dark"><tr><th>IUGU</th><th>Opening stock</th></tr></thead>
+          <tbody>
+            {% for row in iugu_opening_stocks %}
+              <tr><td>{{ row.plant_code }}</td><td>{{ row.opening_stock }}</td></tr>
+            {% endfor %}
+            {% if not iugu_opening_stocks %}<tr><td colspan="2" class="text-center text-secondary py-3">No opening stock.</td></tr>{% endif %}
+          </tbody>
+        </table>
+      </div>
+      <div class="d-flex justify-content-between align-items-center mt-2">
+        <span class="text-secondary xsmall">Showing {{ iugu_opening_stocks|length }} of {{ iugu_opening_stocks_page.total }}</span>
+        <div class="btn-group btn-group-sm" role="group">
+          <a class="btn btn-outline-secondary {% if not iugu_opening_stocks_page.has_prev %}disabled{% endif %}" href="{% if iugu_opening_stocks_page.has_prev %}{{ url_for('ops.network', workspace_id=workspace.id, dataset_id=dataset.id, opening_page=iugu_opening_stocks_page.prev_page) }}#iugu-opening-stock{% else %}#{% endif %}">Previous</a>
+          <a class="btn btn-outline-secondary {% if not iugu_opening_stocks_page.has_next %}disabled{% endif %}" href="{% if iugu_opening_stocks_page.has_next %}{{ url_for('ops.network', workspace_id=workspace.id, dataset_id=dataset.id, opening_page=iugu_opening_stocks_page.next_page) }}#iugu-opening-stock{% else %}#{% endif %}">Next</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="hub-opening-stock" class="card shadow-soft card-tilt">
+    <div class="card-body">
+      <div class="section-header-luxe d-flex align-items-start justify-content-between flex-wrap gap-3">
+        <div class="d-flex align-items-start gap-2"><div class="icon-chip icon-chip-info"><i class="bi bi-diagram-3-fill"></i></div><div><p class="text-uppercase text-secondary small mb-1">Hub opening stock</p><h2 class="h6 mb-0">Intermediate stock positions</h2></div></div>
+        <span class="chip chip-soft">From → To</span>
+      </div>
+      {% if current_user.is_org_admin %}
+      <form method="POST" action="{{ url_for('ops.create_hub_opening_stock') }}" class="row g-2 align-items-end mb-3">
+        {{ hub_opening_form.csrf_token }}
+        <input type="hidden" name="workspace_id" value="{{ workspace.id }}">
+        <input type="hidden" name="dataset_id" value="{{ dataset.id }}">
+        <div class="col-md-4">{{ hub_opening_form.from_code.label(class_='form-label small') }}{{ hub_opening_form.from_code(class_='form-control', placeholder='From') }}</div>
+        <div class="col-md-4">{{ hub_opening_form.to_code.label(class_='form-label small') }}{{ hub_opening_form.to_code(class_='form-control', placeholder='To') }}</div>
+        <div class="col-md-3">{{ hub_opening_form.opening_stock.label(class_='form-label small') }}{{ hub_opening_form.opening_stock(class_='form-control', placeholder='tons') }}</div>
+        <div class="col-md-1 d-flex align-items-end">{{ hub_opening_form.submit(class_='btn btn-primary w-100') }}</div>
+      </form>
+      <form method="POST" action="{{ url_for('ops.upload_hub_opening_stock_csv') }}" class="row g-2 align-items-end mb-3" enctype="multipart/form-data">
+        {{ hub_opening_csv_form.csrf_token }}
+        {{ hub_opening_csv_form.workspace_id }}
+        {{ hub_opening_csv_form.dataset_id }}
+        <div class="col-md-8">{{ hub_opening_csv_form.file.label(class_='form-label small') }}{{ hub_opening_csv_form.file(class_='form-control form-control-sm') }}</div>
+        <div class="col-md-4 d-flex align-items-end">{{ hub_opening_csv_form.submit(class_='btn btn-outline-primary w-100 btn-sm', value='Upload CSV') }}</div>
+        <div class="col-12 text-secondary xsmall">Header: HubOpeningStock → IU, IUGU, Opening Stock</div>
+      </form>
+      {% endif %}
+      <div class="table-responsive">
+        <table class="table table-premium align-middle mb-0">
+          <thead class="table-dark"><tr><th>From</th><th>To</th><th>Opening stock</th></tr></thead>
+          <tbody>
+            {% for row in hub_opening_stocks %}
+              <tr><td>{{ row.from_code }}</td><td>{{ row.to_code }}</td><td>{{ row.opening_stock }}</td></tr>
+            {% endfor %}
+            {% if not hub_opening_stocks %}<tr><td colspan="3" class="text-center text-secondary py-3">No hub opening stock.</td></tr>{% endif %}
+          </tbody>
+        </table>
+      </div>
+      <div class="d-flex justify-content-between align-items-center mt-2">
+        <span class="text-secondary xsmall">Showing {{ hub_opening_stocks|length }} of {{ hub_opening_stocks_page.total }}</span>
+        <div class="btn-group btn-group-sm" role="group">
+          <a class="btn btn-outline-secondary {% if not hub_opening_stocks_page.has_prev %}disabled{% endif %}" href="{% if hub_opening_stocks_page.has_prev %}{{ url_for('ops.network', workspace_id=workspace.id, dataset_id=dataset.id, hub_opening_page=hub_opening_stocks_page.prev_page) }}#hub-opening-stock{% else %}#{% endif %}">Previous</a>
+          <a class="btn btn-outline-secondary {% if not hub_opening_stocks_page.has_next %}disabled{% endif %}" href="{% if hub_opening_stocks_page.has_next %}{{ url_for('ops.network', workspace_id=workspace.id, dataset_id=dataset.id, hub_opening_page=hub_opening_stocks_page.next_page) }}#hub-opening-stock{% else %}#{% endif %}">Next</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="iugu-closing-stock" class="card shadow-soft card-tilt">
+    <div class="card-body">
+      <div class="section-header-luxe d-flex align-items-start justify-content-between flex-wrap gap-3">
+        <div class="d-flex align-items-start gap-2"><div class="icon-chip icon-chip-warning"><i class="bi bi-archive"></i></div><div><p class="text-uppercase text-secondary small mb-1">Closing stock</p><h2 class="h6 mb-0">Period-end targets</h2></div></div>
+        <span class="chip chip-soft">Min/Max per period</span>
+      </div>
+      {% if current_user.is_org_admin %}
+      <form method="POST" action="{{ url_for('ops.create_iugu_closing_stock') }}" class="row g-2 align-items-end mb-3">
+        {{ closing_form.csrf_token }}
+        <input type="hidden" name="workspace_id" value="{{ workspace.id }}">
+        <input type="hidden" name="dataset_id" value="{{ dataset.id }}">
+        <div class="col-md-4">{{ closing_form.plant_code.label(class_='form-label small') }}{{ closing_form.plant_code(class_='form-control', placeholder='IUGU code') }}</div>
+        <div class="col-md-2">{{ closing_form.time_period.label(class_='form-label small') }}{{ closing_form.time_period(class_='form-select') }}</div>
+        <div class="col-md-3">{{ closing_form.min_close_stock.label(class_='form-label small') }}{{ closing_form.min_close_stock(class_='form-control', placeholder='min') }}</div>
+        <div class="col-md-3">{{ closing_form.max_close_stock.label(class_='form-label small') }}{{ closing_form.max_close_stock(class_='form-control', placeholder='optional max') }}</div>
+        <div class="col-md-12 col-lg-12 col-xl-12 text-end">{{ closing_form.submit(class_='btn btn-primary') }}</div>
+      </form>
+      <form method="POST" action="{{ url_for('ops.upload_iugu_closing_stock_csv') }}" class="row g-2 align-items-end mb-3" enctype="multipart/form-data">
+        {{ closing_csv_form.csrf_token }}
+        {{ closing_csv_form.workspace_id }}
+        {{ closing_csv_form.dataset_id }}
+        <div class="col-md-8">{{ closing_csv_form.file.label(class_='form-label small') }}{{ closing_csv_form.file(class_='form-control form-control-sm') }}</div>
+        <div class="col-md-4 d-flex align-items-end">{{ closing_csv_form.submit(class_='btn btn-outline-primary w-100 btn-sm', value='Upload CSV') }}</div>
+        <div class="col-12 text-secondary xsmall">Header: IUGUClosingStock → IUGU CODE, TIME PERIOD, MIN CLOSE STOCK, MAX CLOSE STOCK</div>
+      </form>
+      {% endif %}
+      <div class="table-responsive">
+        <table class="table table-premium align-middle mb-0">
+          <thead class="table-dark"><tr><th>IUGU</th><th>Period</th><th>Min close</th><th>Max close</th></tr></thead>
+          <tbody>
+            {% for row in closing_stocks %}
+              <tr><td>{{ row.plant_code }}</td><td>{{ row.time_period }}</td><td>{{ row.min_close_stock }}</td><td>{{ row.max_close_stock or '—' }}</td></tr>
+            {% endfor %}
+            {% if not closing_stocks %}<tr><td colspan="4" class="text-center text-secondary py-3">No closing stock targets.</td></tr>{% endif %}
+          </tbody>
+        </table>
+      </div>
+      <div class="d-flex justify-content-between align-items-center mt-2">
+        <span class="text-secondary xsmall">Showing {{ closing_stocks|length }} of {{ closing_stocks_page.total }}</span>
+        <div class="btn-group btn-group-sm" role="group">
+          <a class="btn btn-outline-secondary {% if not closing_stocks_page.has_prev %}disabled{% endif %}" href="{% if closing_stocks_page.has_prev %}{{ url_for('ops.network', workspace_id=workspace.id, dataset_id=dataset.id, closing_page=closing_stocks_page.prev_page) }}#iugu-closing-stock{% else %}#{% endif %}">Previous</a>
+          <a class="btn btn-outline-secondary {% if not closing_stocks_page.has_next %}disabled{% endif %}" href="{% if closing_stocks_page.has_next %}{{ url_for('ops.network', workspace_id=workspace.id, dataset_id=dataset.id, closing_page=closing_stocks_page.next_page) }}#iugu-closing-stock{% else %}#{% endif %}">Next</a>
+        </div>
       </div>
     </div>
   </section>
 
   <section id="optimization" class="card shadow-soft card-tilt">
     <div class="card-body">
-      <div class="section-header-luxe">
-        <div class="d-flex align-items-start gap-2">
-          <div class="icon-chip icon-chip-purple"><i class="bi bi-cpu"></i></div>
-          <div>
-            <p class="text-uppercase text-secondary small mb-1">Optimization engine</p>
-            <h2 class="h6 mb-0">Clinker allocation optimizer</h2>
-          </div>
-        </div>
-        <span class="chip chip-info">Deterministic · Stochastic · Robust</span>
+      <div class="section-header-luxe d-flex align-items-start justify-content-between flex-wrap gap-3">
+        <div class="d-flex align-items-start gap-2"><div class="icon-chip icon-chip-info"><i class="bi bi-cpu"></i></div><div><p class="text-uppercase text-secondary small mb-1">Optimization</p><h2 class="h6 mb-0">Run solver with new inputs</h2></div></div>
+        <span class="chip chip-soft">Scenario-linked</span>
       </div>
-
-      <form method="POST" action="{{ url_for('ops.run_optimization') }}" class="row g-3 align-items-end mb-3">
-        {{ optimization_form.csrf_token }}
-        <div class="col-md-3">
-          {{ optimization_form.scenario_id.label(class_='form-label small') }}
-          {{ optimization_form.scenario_id(class_='form-select') }}
-        </div>
-        <div class="col-md-2">
-          {{ optimization_form.mode.label(class_='form-label small') }}
-          {{ optimization_form.mode(class_='form-select') }}
-        </div>
-        <div class="col-md-2">
-          {{ optimization_form.runtime_limit.label(class_='form-label small') }}
-          {{ optimization_form.runtime_limit(class_='form-control', placeholder='e.g. 120') }}
-        </div>
-        <div class="col-md-2">
-          {{ optimization_form.demand_uplift_pct.label(class_='form-label small') }}
-          {{ optimization_form.demand_uplift_pct(class_='form-control', placeholder='0.10') }}
-          <small class="text-secondary">Robust buffer</small>
-        </div>
-        <div class="col-md-2">
-          {{ optimization_form.scenario_samples.label(class_='form-label small') }}
-          {{ optimization_form.scenario_samples(class_='form-control', placeholder='3') }}
-          <small class="text-secondary">Stochastic samples</small>
-        </div>
-        <div class="col-md-2">
-          {{ optimization_form.service_level_target.label(class_='form-label small') }}
-          {{ optimization_form.service_level_target(class_='form-control', placeholder='0.95') }}
-          <small class="text-secondary">Chance constraint</small>
-        </div>
-        <div class="col-md-2">
-          {{ optimization_form.shortage_penalty.label(class_='form-label small') }}
-          {{ optimization_form.shortage_penalty(class_='form-control', placeholder='1000') }}
-          <small class="text-secondary">Penalty if shortages allowed</small>
-        </div>
-        <div class="col-md-2 form-check mt-4">
-          {{ optimization_form.strict_service(class_='form-check-input') }}
-          <label class="form-check-label small">Strict service</label>
-        </div>
-        <div class="col-md-2 form-check mt-4">
-          {{ optimization_form.allow_shortage_penalties(class_='form-check-input') }}
-          <label class="form-check-label small">Allow shortage penalties</label>
-        </div>
-        <div class="col-md-1 form-check mt-4">
-          {{ optimization_form.mark_completed(class_='form-check-input') }}
-          <label class="form-check-label small">Close scenario</label>
-        </div>
-        <div class="col-md-2 d-flex align-items-end">
-          {{ optimization_form.submit(class_='btn btn-gradient w-100', **{'data-loading-text': 'Running...'}) }}
-        </div>
-      </form>
-
-      <div class="table-responsive">
-        <table class="table table-premium table-hover align-middle mb-0">
-          <thead class="table-dark">
-            <tr>
-              <th>Job</th>
-              <th>Scenario</th>
-              <th>Mode</th>
-              <th>Status</th>
-              <th>Solver</th>
-              <th>Total cost</th>
-              <th>Service level</th>
-              <th>Runtime (s)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for job in recent_jobs %}
-              {% set result = job.result %}
-              <tr>
-                <td>#{{ job.id }}</td>
-                <td>{{ job.scenario.scenario_name if job.scenario else job.scenario_id }}</td>
-                <td><span class="chip chip-soft">{{ job.mode|capitalize }}</span></td>
-                <td><span class="chip chip-{{ 'info' if job.status=='completed' else ('warning' if job.status=='running' else 'soft') }}">{{ job.status|capitalize }}</span></td>
-                <td class="text-secondary small">{{ job.solver or 'engine' }}</td>
-                <td>{{ result.total_cost if result else 'N/A' }}</td>
-                <td class="text-secondary small">{{ result.kpis.get('service_level_pct') if result and result.kpis else 'N/A' }}%</td>
-                <td class="text-secondary small">{{ job.runtime_seconds or '-' }}</td>
-              </tr>
-            {% endfor %}
-            {% if not recent_jobs %}
-              <tr><td colspan="8" class="text-center text-secondary py-4">No optimization runs yet.</td></tr>
-            {% endif %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </section>
-
-  <section id="scenarios" class="card shadow-soft card-tilt">
-    <div class="card-body">
-      <div class="section-header-luxe">
-        <div class="d-flex align-items-start gap-2">
-          <div class="icon-chip icon-chip-info"><i class="bi bi-bar-chart"></i></div>
-          <div>
-            <p class="text-uppercase text-secondary small mb-1">Scenario planning</p>
-            <h2 class="h6 mb-0">Cost &amp; capacity experiments</h2>
-          </div>
-        </div>
-        <button class="btn btn-outline-light btn-sm ms-auto " style="margin: 8px;" type="button" data-bs-toggle="collapse" data-bs-target="#scenarioForm"><i class="bi bi-cpu me-2"></i>Create scenario</button>
-      </div>
-
-      <div class="collapse mb-3" id="scenarioForm">
-        <div class="panel-tile">
-          <div class="d-flex align-items-center gap-2 mb-2">
-            <i class="bi bi-graph-up text-info"></i>
-            <span class="small text-secondary">Set up a new scenario</span>
-          </div>
-          <form method="POST" action="{{ url_for('ops.create_scenario') }}" class="row g-3">
+      <div class="row g-3 align-items-end">
+        <div class="col-12 col-lg-6">
+          <form method="POST" action="{{ url_for('ops.create_scenario') }}" class="row g-2 align-items-end">
             {{ scenario_form.csrf_token }}
-            <div class="col-md-4">{{ scenario_form.scenario_name.label(class_='form-label small') }}{{ scenario_form.scenario_name(class_='form-control') }}</div>
-            <div class="col-md-2">{{ scenario_form.periods.label(class_='form-label small') }}{{ scenario_form.periods(class_='form-control') }}</div>
-            <div class="col-md-3">{{ scenario_form.status.label(class_='form-label small') }}{{ scenario_form.status(class_='form-select') }}</div>
-            <div class="col-md-2 d-flex align-items-end">{{ scenario_form.submit(class_='btn btn-primary w-100', **{'data-loading-text': 'Saving...'}) }}</div>
+            {{ scenario_form.workspace_id(value=workspace.id) }}
+            <div class="col-6">{{ scenario_form.scenario_name.label(class_='form-label small') }}{{ scenario_form.scenario_name(class_='form-control', placeholder='Scenario name') }}</div>
+            <div class="col-3">{{ scenario_form.periods.label(class_='form-label small') }}{{ scenario_form.periods(class_='form-control') }}</div>
+            <div class="col-3">{{ scenario_form.status.label(class_='form-label small') }}{{ scenario_form.status(class_='form-select') }}</div>
+            <div class="col-12 text-end">{{ scenario_form.submit(class_='btn btn-ghost btn-sm') }}</div>
+          </form>
+        </div>
+        <div class="col-12 col-lg-6">
+          <form method="POST" action="{{ url_for('ops.run_optimization') }}" class="row g-2 align-items-end">
+            {{ optimization_form.csrf_token }}
+            <input type="hidden" name="workspace_id" value="{{ workspace.id }}">
+            <input type="hidden" name="dataset_id" value="{{ dataset.id }}">
+            <div class="col-4">{{ optimization_form.scenario_id.label(class_='form-label small') }}{{ optimization_form.scenario_id(class_='form-select') }}</div>
+            <div class="col-3">{{ optimization_form.mode.label(class_='form-label small') }}{{ optimization_form.mode(class_='form-select') }}</div>
+            <div class="col-3">{{ optimization_form.runtime_limit.label(class_='form-label small') }}{{ optimization_form.runtime_limit(class_='form-control', placeholder='secs') }}</div>
+            <div class="col-2 d-flex align-items-end">{{ optimization_form.submit(class_='btn btn-primary w-100') }}</div>
           </form>
         </div>
       </div>
 
-      <div class="table-responsive">
-        <table class="table table-premium table-hover align-middle mb-0">
-          <thead class="table-dark">
-            <tr>
-              <th>Name</th>
-              <th>Periods</th>
-              <th>Status</th>
-              <th>Result cost</th>
-              <th class="text-end">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for scenario in scenarios %}
-              <tr>
-                <td>{{ scenario.scenario_name }}</td>
-                <td>{{ scenario.periods }}</td>
-                <td>
-                  <span class="chip {% if scenario.status=='completed' %}chip-info{% elif scenario.status=='executed' %}chip-soft{% else %}chip-soft{% endif %}">{{ scenario.status|capitalize }}</span>
-                </td>
-                <td>{{ scenario.result_cost or 'N/A' }}</td>
-                <td class="text-end">
-                  <form method="POST" action="{{ url_for('ops.update_scenario_status', scenario_id=scenario.id) }}" class="d-inline">
-                    {{ scenario_form.csrf_token }}
-                    <input type="hidden" name="status" value="executed">
-                    <button class="btn btn-outline-light btn-sm" type="submit" data-loading-text="Updating...">Execute</button>
-                  </form>
-                  <form method="POST" action="{{ url_for('ops.update_scenario_status', scenario_id=scenario.id) }}" class="d-inline ms-1">
-                    {{ scenario_form.csrf_token }}
-                    <input type="hidden" name="status" value="completed">
-                    <button class="btn btn-light btn-sm" type="submit" data-loading-text="Updating...">Complete</button>
-                  </form>
-                  {% set s_form = scenario_edit_forms.get(scenario.id) %}
-                  {% if s_form %}
-                    <button class="btn btn-light btn-sm ms-1" type="button" data-bs-toggle="collapse" data-bs-target="#edit-scenario-{{ scenario.id }}">Edit</button>
-                  {% endif %}
-                </td>
-              </tr>
-              {% if s_form %}
-                <tr class="collapse" id="edit-scenario-{{ scenario.id }}">
-                  <td colspan="5" class="bg-dark-subtle">
-                    <form method="POST" action="{{ url_for('ops.edit_scenario', scenario_id=scenario.id) }}" class="row g-2 align-items-end">
-                      {{ s_form.csrf_token }}
-                      <div class="col-md-4">{{ s_form.scenario_name.label(class_='form-label small text-secondary') }}{{ s_form.scenario_name(class_='form-control form-control-sm', value=scenario.scenario_name) }}</div>
-                      <div class="col-md-2">{{ s_form.periods.label(class_='form-label small text-secondary') }}{{ s_form.periods(class_='form-control form-control-sm', value=scenario.periods) }}</div>
-                      <div class="col-md-2">{{ s_form.status.label(class_='form-label small text-secondary') }}{{ s_form.status(class_='form-select form-select-sm', value=scenario.status) }}</div>
-                      <div class="col-md-2 d-flex align-items-end">{{ s_form.submit(class_='btn btn-primary btn-sm w-100', **{'data-loading-text': 'Saving...'}) }}</div>
-                    </form>
-                  </td>
-                </tr>
-              {% endif %}
-            {% endfor %}
-            {% if not scenarios %}
-              <tr><td colspan="5" class="text-center text-secondary py-4">No scenarios defined.</td></tr>
-            {% endif %}
-          </tbody>
-        </table>
+      <div class="mt-3">
+        <div class="subtle-panel p-3 border border-1 rounded-3 shadow-sm bg-gradient" style="background: linear-gradient(120deg, rgba(16,24,40,0.95), rgba(30,41,59,0.9));">
+          <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+            <div>
+              <p class="text-uppercase text-secondary small mb-1">Exports</p>
+              <h3 class="h6 mb-0 text-white">Download optimization outputs</h3>
+              <p class="text-secondary xsmall mb-0">Pick a scenario and the sections you want. Exports mirror the dispatch, production, and inventory views.</p>
+            </div>
+            <div class="d-flex gap-2">
+              <span class="chip chip-soft">CSV & PDF</span>
+              <span class="chip chip-soft">Scenario-aware</span>
+            </div>
+          </div>
+          <form method="POST" class="row g-3 align-items-end mt-2">
+            {{ optimization_export_form.csrf_token }}
+            <div class="col-12 col-md-4">
+              {{ optimization_export_form.scenario_id.label(class_='form-label small text-secondary') }}
+              {{ optimization_export_form.scenario_id(class_='form-select form-select-sm bg-dark text-white border-0 shadow-sm') }}
+            </div>
+            <div class="col-12 col-md-8">
+              <label class="form-label small text-secondary mb-1">Sections</label>
+              <div class="d-flex flex-wrap gap-2">
+                {% for subfield in optimization_export_form.sections %}
+                  <div class="form-check form-check-inline form-check-dark bg-dark rounded-3 px-3 py-2 shadow-sm">
+                    {{ subfield(class_='form-check-input') }}
+                    <label class="form-check-label small text-white" for="{{ subfield.id }}">{{ subfield.label.text }}</label>
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+            <div class="col-12 d-flex flex-wrap gap-2">
+              <button type="submit" formaction="{{ url_for('ops.export_optimization_csv') }}" class="btn btn-outline-light btn-sm"><i class="bi bi-filetype-csv me-1"></i>Export CSV</button>
+              <button type="submit" formaction="{{ url_for('ops.export_optimization_pdf') }}" class="btn btn-primary btn-sm"><i class="bi bi-filetype-pdf me-1"></i>Export PDF</button>
+            </div>
+          </form>
+        </div>
+      </div>
+      <div class="mt-3">
+        <p class="text-secondary small mb-2">Recent runs</p>
+        <ul class="list-unstyled small text-secondary d-flex flex-column gap-1">
+          {% for job in recent_jobs %}
+            {% set ts = job.completed_at or job.started_at %}
+            <li class="d-flex align-items-center gap-2">
+              <span class="badge-dot bg-info"></span>
+              {{ job.status }}
+              {% if ts %} · {{ ts.strftime('%Y-%m-%d %H:%M') }}{% endif %}
+            </li>
+          {% endfor %}
+          {% if not recent_jobs %}<li class="text-secondary">No jobs yet.</li>{% endif %}
+        </ul>
+      </div>
+
+      <div class="mt-4">
+        {% if latest_result and latest_result.kpis.get('ui_views') %}
+          {% set ui = latest_result.kpis.get('ui_views') %}
+          {% set summary = ui.get('summary', {}) %}
+          <div class="alert alert-soft d-flex flex-wrap align-items-center justify-content-between gap-3">
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge bg-primary rounded-pill">Latest result</span>
+              <span class="fw-semibold text-dark">{{ latest_result.job.solver_status if latest_result.job else 'completed' }}</span>
+              <span class="text-secondary">Scenario {{ latest_result.scenario.scenario_name if latest_result.scenario else latest_result.scenario_id }}</span>
+            </div>
+            <div class="d-flex flex-wrap gap-3 small">
+              <span class="chip chip-soft">Objective ₹{{ summary.get('objective', latest_result.total_cost)|round(2) }}</span>
+              <span class="chip chip-soft">Service level {{ summary.get('service_level_pct') or 0 }}%</span>
+              <span class="chip chip-soft">Runtime {{ summary.get('runtime_seconds', 0)|round(2) }}s</span>
+              {% if summary.get('mip_gap') is not none %}<span class="chip chip-soft">MIP gap {{ summary.get('mip_gap')|round(4) }}</span>{% endif %}
+            </div>
+          </div>
+
+          <ul class="nav nav-pills mb-3" id="optTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link active" id="opt-summary-tab" data-bs-toggle="tab" data-bs-target="#opt-summary" type="button" role="tab">Summary</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="opt-dispatch-tab" data-bs-toggle="tab" data-bs-target="#opt-dispatch" type="button" role="tab">Dispatch</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="opt-production-tab" data-bs-toggle="tab" data-bs-target="#opt-production" type="button" role="tab">Production</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="opt-inventory-tab" data-bs-toggle="tab" data-bs-target="#opt-inventory" type="button" role="tab">Inventory</button>
+            </li>
+          </ul>
+
+          <div class="tab-content" id="optTabsContent">
+            <div class="tab-pane fade show active" id="opt-summary" role="tabpanel">
+              <div class="row g-3">
+                <div class="col-6 col-lg-3">
+                  <div class="card card-compact h-100">
+                    <div class="card-body">
+                      <p class="text-uppercase text-secondary small mb-1">Total cost</p>
+                      <h4 class="h5 mb-0">₹{{ summary.get('costs', {}).get('total', summary.get('objective', 0))|round(2) }}</h4>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-6 col-lg-3">
+                  <div class="card card-compact h-100">
+                    <div class="card-body">
+                      <p class="text-uppercase text-secondary small mb-1">Production</p>
+                      <h4 class="h6 mb-0">₹{{ summary.get('costs', {}).get('production', 0)|round(2) }}</h4>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-6 col-lg-3">
+                  <div class="card card-compact h-100">
+                    <div class="card-body">
+                      <p class="text-uppercase text-secondary small mb-1">Transport</p>
+                      <h4 class="h6 mb-0">₹{{ summary.get('costs', {}).get('transport', 0)|round(2) }}</h4>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-6 col-lg-3">
+                  <div class="card card-compact h-100">
+                    <div class="card-body">
+                      <p class="text-uppercase text-secondary small mb-1">Holding</p>
+                      <h4 class="h6 mb-0">₹{{ summary.get('costs', {}).get('holding', 0)|round(2) }}</h4>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="tab-pane fade" id="opt-dispatch" role="tabpanel">
+              <div class="table-responsive">
+                <table class="table table-premium align-middle mb-0">
+                  <thead class="table-dark">
+                    <tr><th>Period</th><th>From</th><th>To</th><th>Mode</th><th>Trips</th><th>Qty</th><th>Trip cost</th><th>Route cost</th></tr>
+                  </thead>
+                  <tbody>
+                    {% for row in ui.get('dispatch', []) %}
+                      <tr>
+                        <td>{{ row.period }}</td>
+                        <td>{{ row.from }}</td>
+                        <td>{{ row.to }}</td>
+                        <td>{{ row.mode }}</td>
+                        <td>{{ row.trips|round(2) }}</td>
+                        <td>{{ row.qty|round(2) }}</td>
+                        <td>₹{{ row.unit_trip_cost|round(2) }}</td>
+                        <td>₹{{ row.route_cost|round(2) }}</td>
+                      </tr>
+                    {% else %}
+                      <tr><td colspan="8" class="text-secondary text-center">No dispatch plan available.</td></tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="tab-pane fade" id="opt-production" role="tabpanel">
+              <div class="table-responsive">
+                <table class="table table-premium align-middle mb-0">
+                  <thead class="table-dark">
+                    <tr><th>IU</th><th>Period</th><th>Produced</th><th>Capacity</th><th>Utilization</th><th>Cost/ton</th><th>Total cost</th></tr>
+                  </thead>
+                  <tbody>
+                    {% for row in ui.get('production', []) %}
+                      <tr>
+                        <td>{{ row.code }}</td>
+                        <td>{{ row.period }}</td>
+                        <td>{{ row.produced|round(2) }}</td>
+                        <td>{{ row.capacity|round(2) }}</td>
+                        <td>{{ row.utilization_pct|round(2) }}%</td>
+                        <td>₹{{ row.cost_per_ton|round(2) }}</td>
+                        <td>₹{{ row.cost|round(2) }}</td>
+                      </tr>
+                    {% else %}
+                      <tr><td colspan="7" class="text-secondary text-center">No production plan available.</td></tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="tab-pane fade" id="opt-inventory" role="tabpanel">
+              <div class="table-responsive">
+                <table class="table table-premium align-middle mb-0">
+                  <thead class="table-dark">
+                    <tr><th>Plant</th><th>Period</th><th>Opening</th><th>Inbound</th><th>Shipments out</th><th>Demand</th><th>Outbound total</th><th>Closing</th><th>Min</th><th>Max</th></tr>
+                  </thead>
+                  <tbody>
+                    {% for row in ui.get('inventory', []) %}
+                      <tr class="{% if row.below_min %}table-warning{% elif row.above_max %}table-danger{% endif %}">
+                        <td>{{ row.code }}</td>
+                        <td>{{ row.period }}</td>
+                        <td>{{ row.opening|round(2) }}</td>
+                        <td>{{ row.inbound|round(2) }}</td>
+                        <td>{{ row.outbound_ship|round(2) }}</td>
+                        <td>{{ row.demand|round(2) }}</td>
+                        <td>{{ row.outbound_total|round(2) }}</td>
+                        <td>{{ row.closing|round(2) }}</td>
+                        <td>{{ row.min_close|round(2) }}</td>
+                        <td>{{ row.max_close if row.max_close is not none else '—' }}</td>
+                      </tr>
+                    {% else %}
+                      <tr><td colspan="10" class="text-secondary text-center">No inventory ledger available.</td></tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        {% else %}
+          <div class="text-secondary small">No optimization outputs yet. Run a scenario to see the dispatch, production, and inventory plans here.</div>
+        {% endif %}
       </div>
     </div>
   </section>

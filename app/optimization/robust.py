@@ -23,5 +23,6 @@ def apply_robust_adjustments(dataset: CanonicalDataset, config: RobustConfig) ->
         inventory=dataset.inventory,
         demand=stressed,
         safety_stock=dataset.safety_stock,
+        min_fulfillment=dataset.min_fulfillment,
         metadata={**dataset.metadata, "robust": True, "demand_uplift_pct": config.demand_uplift_pct},
     )

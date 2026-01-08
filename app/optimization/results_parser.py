@@ -27,6 +27,8 @@ class ResultsParser:
 
     def parse(self, solver_result: SolverResult, dataset: CanonicalDataset) -> ParsedSolution:
         route_dest = {route["id"]: route["destination"] for route in dataset.routes}
+        route_source = {route["id"]: route["source"] for route in dataset.routes}
+        
         delivered_by_dest: Dict[int, float] = {}
         for (route_id, _period), qty in solver_result.shipment_plan.items():
             dest = route_dest.get(route_id)
@@ -54,13 +56,27 @@ class ResultsParser:
         total_shipped = sum(solver_result.shipment_plan.values())
         total_trips = sum(solver_result.trips_plan.values()) if solver_result.trips_plan else 0.0
         total_produced = sum(solver_result.production_plan.values())
-        total_capacity = sum(float(p.get("production_capacity", 0.0)) for p in dataset.plants if p.get("type") == "IU") * dataset.periods
+        
+        # Calculate production utilization using period-specific capacities if available
+        total_capacity = 0.0
+        for p in dataset.plants:
+            if p.get("type") == "IU":
+                pid = p["id"]
+                if pid in dataset.period_capacities and len(dataset.period_capacities[pid]) == dataset.periods:
+                    total_capacity += sum(dataset.period_capacities[pid])
+                else:
+                    total_capacity += float(p.get("production_capacity", 0.0)) * dataset.periods
+        
         production_utilization = round((total_produced / total_capacity) * 100, 2) if total_capacity else 0.0
 
+        # Calculate transport capacity considering batch multipliers
         transport_capacity = 0.0
         for route in dataset.routes:
+            route_id = route["id"]
             max_trips = route.get("max_trips_per_period") or 0
-            transport_capacity += float(route.get("trip_capacity", 0.0)) * max_trips * dataset.periods
+            multiplier = dataset.batch_multipliers.get(route_id, 1.0)
+            # Max flow per route = max_trips × multiplier × periods
+            transport_capacity += max_trips * multiplier * dataset.periods
         transport_utilization = round((total_shipped / transport_capacity) * 100, 2) if transport_capacity else 0.0
 
         safety_violations: list[int] = []
@@ -88,6 +104,44 @@ class ResultsParser:
             dest = route_dest.get(route_id)
             if dest is not None:
                 shipments_by_destination[dest] = shipments_by_destination.get(dest, 0.0) + qty
+        
+        # Enhanced KPIs: batch multiplier utilization, IUGU constraint compliance
+        batch_multiplier_utilization: Dict[int, float] = {}
+        for route_id, trips_total in trips_by_route.items():
+            multiplier = dataset.batch_multipliers.get(route_id, 1.0)
+            # Actual flow vs theoretical max with multiplier
+            max_possible_trips = 0
+            for route in dataset.routes:
+                if route["id"] == route_id:
+                    max_possible_trips = (route.get("max_trips_per_period") or 0) * dataset.periods
+                    break
+            if max_possible_trips > 0:
+                batch_multiplier_utilization[route_id] = round((trips_total / max_possible_trips) * 100, 2)
+        
+        # Check IUGU constraint satisfaction
+        iugu_compliance: Dict[str, dict] = {}
+        for constraint_key, (min_flow, max_flow) in dataset.iugu_constraints.items():
+            parts = str(constraint_key).split("_")
+            if len(parts) == 2:
+                try:
+                    source_id = int(parts[0].replace("IU", "").replace("GU", ""))
+                    dest_id = int(parts[1].replace("IU", "").replace("GU", ""))
+                    
+                    # Sum flow from source to dest across all relevant routes and periods
+                    total_flow = 0.0
+                    for (route_id, _period), qty in solver_result.shipment_plan.items():
+                        if route_source.get(route_id) == source_id and route_dest.get(route_id) == dest_id:
+                            total_flow += qty
+                    
+                    satisfied = (total_flow >= min_flow - 1e-6) and (total_flow <= max_flow + 1e-6)
+                    iugu_compliance[constraint_key] = {
+                        "actual_flow": round(total_flow, 2),
+                        "min_required": round(min_flow, 2),
+                        "max_allowed": round(max_flow, 2) if max_flow < float("inf") else "unlimited",
+                        "satisfied": satisfied,
+                    }
+                except (ValueError, KeyError):
+                    pass
 
         cost_summary = {
             "production": production_cost,
@@ -120,6 +174,10 @@ class ResultsParser:
             "trips_by_route": trips_by_route,
             "shipments_by_destination": shipments_by_destination,
             "cost_summary": cost_summary,
+            # Enhanced KPIs
+            "batch_multiplier_utilization": batch_multiplier_utilization,
+            "iugu_compliance": iugu_compliance,
+            "iugu_all_satisfied": all(c.get("satisfied", False) for c in iugu_compliance.values()) if iugu_compliance else True,
         }
 
         return ParsedSolution(

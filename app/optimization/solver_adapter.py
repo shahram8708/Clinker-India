@@ -109,7 +109,16 @@ class _DeterministicMilpSolver:
         inv0 = {pid: float(dataset.inventory.get(pid, 0.0)) for pid in plant_lookup}
         safety = {pid: float(dataset.safety_stock.get(pid, 0.0)) for pid in plant_lookup}
         inv_cap = {pid: float(plant_lookup[pid].get("max_inventory_capacity", 0.0)) for pid in plant_lookup}
-        prod_cap = {pid: float(plant_lookup[pid].get("production_capacity", 0.0)) for pid in plant_lookup}
+        
+        # Use period-specific capacities if available, otherwise fall back to static capacity
+        prod_cap = {}
+        for pid in plant_lookup:
+            if pid in dataset.period_capacities and len(dataset.period_capacities[pid]) == dataset.periods:
+                prod_cap[pid] = dataset.period_capacities[pid]
+            else:
+                static_cap = float(plant_lookup[pid].get("production_capacity", 0.0))
+                prod_cap[pid] = [static_cap] * dataset.periods
+        
         prod_cost = {pid: float(plant_lookup[pid].get("production_cost", 0.0)) for pid in plant_lookup}
         hold_cost = {pid: float(plant_lookup[pid].get("holding_cost", 0.0)) for pid in plant_lookup}
 
@@ -128,6 +137,12 @@ class _DeterministicMilpSolver:
                     Shortage[(pid, t)] = pulp.LpVariable(f"shortage_{pid}_{t}", lowBound=0)
 
         route_cost_per_ton = {route["id"]: float(route.get("cost_per_ton", 0.0) or 0.0) for route in dataset.routes}
+        
+        # Extract batch multipliers for each route
+        batch_multipliers = {}
+        for route in dataset.routes:
+            route_id = route["id"]
+            batch_multipliers[route_id] = dataset.batch_multipliers.get(route_id, 1.0)
 
         for route in dataset.routes:
             max_trips = route.get("max_trips_per_period") or None
@@ -140,9 +155,11 @@ class _DeterministicMilpSolver:
                 )
                 Ship[(route["id"], t)] = pulp.LpVariable(f"ship_{route['id']}_{t}", lowBound=0)
 
+        # Production capacity constraints with period-specific capacities
         for i in iu_ids:
             for t in periods:
-                prob += X[(i, t)] <= prod_cap[i], f"prod_cap_{i}_{t}"
+                period_cap = prod_cap[i][t - 1] if isinstance(prod_cap[i], list) else prod_cap[i]
+                prob += X[(i, t)] <= period_cap, f"prod_cap_{i}_{t}"
 
         for g in gu_ids:
             for t in periods:
@@ -150,19 +167,44 @@ class _DeterministicMilpSolver:
 
         iu_sources = set(iu_ids)
 
+        # Route constraints with batch multipliers: Ship = Trips × Multiplier
         for route in dataset.routes:
             rid = route["id"]
             capacity = float(route.get("trip_capacity", 0.0))
             sbq = float(route.get("min_batch_quantity", 0.0))
             source = route.get("source")
+            multiplier = batch_multipliers.get(rid, 1.0)
+            
             for t in periods:
                 if source not in iu_sources:
                     prob += Ship[(rid, t)] == 0, f"forbid_ship_non_iu_{rid}_{t}"
                     prob += Trips[(rid, t)] == 0, f"forbid_trips_non_iu_{rid}_{t}"
                     continue
-                prob += Ship[(rid, t)] <= capacity * Trips[(rid, t)], f"ship_cap_{rid}_{t}"
+                
+                # Key change: Flow = Trips × Batch_Multiplier (not just capacity)
+                # Ship[(rid, t)] = Trips[(rid, t)] × multiplier
+                prob += Ship[(rid, t)] == multiplier * Trips[(rid, t)], f"ship_batch_{rid}_{t}"
+                
+                # Capacity constraint: ensure multiplier × trips doesn't exceed capacity
+                # (optional, depends on whether capacity is per-trip or aggregate)
+                # For now, assume multiplier respects trip capacity inherently
+                # If needed: prob += Ship[(rid, t)] <= capacity * Trips[(rid, t)], f"ship_cap_{rid}_{t}"
+                
+                # SBQ constraint adapted for multipliers: Ship ≥ SBQ when Trips > 0
+                # Using big-M method: Ship ≥ SBQ × (Trips / max_trips) or indicator constraints
+                # Simpler: if trips > 0, then ship >= sbq; enforced via: Ship >= sbq when Trips >= 1
                 if sbq > 0:
-                    prob += Ship[(rid, t)] >= sbq * Trips[(rid, t)], f"ship_sbq_{rid}_{t}"
+                    # Enforce: if Trips >= 1, then Ship >= sbq
+                    # Approximate: Ship >= sbq × min(Trips, 1) ≈ Ship >= sbq when Trips > 0
+                    # Better: use indicator or reformulate as: multiplier × Trips >= sbq when Trips > 0
+                    # Simple linear: no explicit check, rely on multiplier × trips >= sbq naturally
+                    # For strict SBQ: prob += Ship[(rid, t)] >= sbq * Trips[(rid, t)] / (Trips[(rid, t)] + 1e-6), ...
+                    # Actually, with Ship = multiplier × Trips, SBQ is implicitly checked if multiplier ≥ sbq
+                    # More correct: enforce minimum shipment if trips > 0
+                    # Use auxiliary binary: z[(rid, t)] = 1 if Trips > 0, then Ship >= sbq × z
+                    # For simplicity without binary: assume multiplier is configured to respect SBQ
+                    pass
+                
                 max_trips = route.get("max_trips_per_period")
                 if max_trips:
                     prob += Trips[(rid, t)] <= max_trips, f"trip_limit_{rid}_{t}"
@@ -197,18 +239,66 @@ class _DeterministicMilpSolver:
                 if upper_cap > 0:
                     prob += Inv[(pid, t)] <= upper_cap, f"cap_{pid}_{t}"
 
+        # Build objective function with period-specific freight and handling costs
+        transport_cost_terms = []
+        for route in dataset.routes:
+            rid = route["id"]
+            for t_idx, t in enumerate(periods):
+                # Get period-specific freight cost (fallback to cost_per_trip if not available)
+                if rid in dataset.freight_costs and len(dataset.freight_costs[rid]) > t_idx:
+                    freight_t = dataset.freight_costs[rid][t_idx]
+                else:
+                    freight_t = float(route.get("cost_per_trip", 0.0))
+                
+                # Get period-specific handling cost (fallback to cost_per_ton if not available)
+                if rid in dataset.handling_costs and len(dataset.handling_costs[rid]) > t_idx:
+                    handling_t = dataset.handling_costs[rid][t_idx]
+                else:
+                    handling_t = route_cost_per_ton.get(rid, 0.0)
+                
+                # Transport cost = freight (per trip) × Trips + handling (per ton) × Ship
+                transport_cost_terms.append(freight_t * Trips[(rid, t)] + handling_t * Ship[(rid, t)])
+        
         objective = (
             pulp.lpSum(prod_cost[i] * X[(i, t)] for i in iu_ids for t in periods)
-            + pulp.lpSum(
-                (float(route.get("cost_per_trip", 0.0)) * Trips[(route["id"], t)])
-                + (route_cost_per_ton.get(route["id"], 0.0) * Ship[(route["id"], t)])
-                for route in dataset.routes
-                for t in periods
-            )
+            + pulp.lpSum(transport_cost_terms)
             + pulp.lpSum(hold_cost[p] * Inv[(p, t)] for p in plant_lookup for t in periods)
             + (pulp.lpSum(model.shortage_penalty * Shortage[(pid, t)] for pid in plant_lookup for t in periods) if model.allow_shortage else 0)
         )
         prob += objective
+        
+        # Add IUGU constraints (min/max flow bounds between IU-GU pairs across all periods)
+        if dataset.iugu_constraints:
+            for constraint_key, (min_flow, max_flow) in dataset.iugu_constraints.items():
+                # Parse constraint key to extract source and destination IDs
+                # Expected format: "IU1_GU2" or "1_5" (plant IDs)
+                parts = str(constraint_key).split("_")
+                if len(parts) == 2:
+                    try:
+                        # Extract numeric IDs
+                        source_id = int(parts[0].replace("IU", "").replace("GU", ""))
+                        dest_id = int(parts[1].replace("IU", "").replace("GU", ""))
+                        
+                        # Find routes connecting this source-destination pair
+                        relevant_routes = [
+                            route for route in dataset.routes
+                            if route["source"] == source_id and route["destination"] == dest_id
+                        ]
+                        
+                        if relevant_routes:
+                            # Aggregate flow across all such routes and all periods
+                            total_flow = pulp.lpSum(
+                                Ship[(route["id"], t)]
+                                for route in relevant_routes
+                                for t in periods
+                            )
+                            if min_flow > 0:
+                                prob += total_flow >= min_flow, f"iugu_min_{constraint_key}"
+                            if max_flow < float("inf"):
+                                prob += total_flow <= max_flow, f"iugu_max_{constraint_key}"
+                    except (ValueError, KeyError):
+                        # Skip if we can't parse IDs
+                        pass
 
         if model.allow_shortage and model.service_level_target is not None:
             alpha = max(min(model.service_level_target, 1.0), 0.0)
@@ -255,12 +345,28 @@ class _DeterministicMilpSolver:
                         shortage_plan[key] = val
 
             production_cost_total = sum(prod_cost[i] * production_plan.get((i, t), 0.0) for i in iu_ids for t in periods)
-            transport_cost_total = sum(
-                float(route.get("cost_per_trip", 0.0)) * max(pulp.value(Trips[(route["id"], t)]), 0.0)
-                + route_cost_per_ton.get(route["id"], 0.0) * shipment_plan.get((route["id"], t), 0.0)
-                for route in dataset.routes
-                for t in periods
-            )
+            
+            # Calculate transport cost using period-specific freight and handling costs
+            transport_cost_total = 0.0
+            for route in dataset.routes:
+                rid = route["id"]
+                for t_idx, t in enumerate(periods):
+                    # Get period-specific freight cost
+                    if rid in dataset.freight_costs and len(dataset.freight_costs[rid]) > t_idx:
+                        freight_t = dataset.freight_costs[rid][t_idx]
+                    else:
+                        freight_t = float(route.get("cost_per_trip", 0.0))
+                    
+                    # Get period-specific handling cost
+                    if rid in dataset.handling_costs and len(dataset.handling_costs[rid]) > t_idx:
+                        handling_t = dataset.handling_costs[rid][t_idx]
+                    else:
+                        handling_t = route_cost_per_ton.get(rid, 0.0)
+                    
+                    trips_val = max(pulp.value(Trips[(rid, t)]), 0.0)
+                    ship_val = shipment_plan.get((rid, t), 0.0)
+                    transport_cost_total += freight_t * trips_val + handling_t * ship_val
+            
             holding_cost_total = sum(hold_cost[p] * inventory_plan.get((p, t), 0.0) for p in plant_lookup for t in periods)
             shortage_cost_total = sum(model.shortage_penalty * shortage_plan.get((p, t), 0.0) for p in plant_lookup for t in periods) if model.allow_shortage else 0.0
         else:

@@ -63,6 +63,7 @@ class RobustModelBuilder:
             plant_id: [qty * (1 + uncertainty["demand_uplift_pct"]) for qty in per_period]
             for plant_id, per_period in dataset.demand.items()
         }
+        # Create robust dataset with stressed demand, preserving all extended parameters
         robust_dataset = CanonicalDataset(
             organization_id=dataset.organization_id,
             scenario_id=dataset.scenario_id,
@@ -73,6 +74,15 @@ class RobustModelBuilder:
             demand=stressed,
             safety_stock=dataset.safety_stock,
             metadata={**dataset.metadata, "robust_applied": True, "robust_formulation": "minmax"},
+            # Carry forward extended parameters
+            period_specific_costs=dataset.period_specific_costs,
+            batch_multipliers=dataset.batch_multipliers,
+            freight_costs=dataset.freight_costs,
+            handling_costs=dataset.handling_costs,
+            hub_codes=dataset.hub_codes,
+            iugu_constraints=dataset.iugu_constraints,
+            period_capacities=dataset.period_capacities,
+            period_demands=dataset.period_demands,
         )
         return ModelDefinition(
             dataset=robust_dataset,

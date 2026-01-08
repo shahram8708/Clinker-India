@@ -2,7 +2,7 @@ Clinker India — Multi-Period Clinker Allocation & Transport Optimizer
 ===================================================================
 
 **Project Title and Short Summary**
-Clinker India is a production-grade, multi-tenant Flask web application that plans clinker production, allocation, transport, and inventory across Integrated Units (IUs) and Grinding Units (GUs). It couples a MILP optimization engine (PuLP/CBC) with a SaaS UI for tenant onboarding, OTP-secured access, scenario setup, execution (deterministic, stochastic, robust), reporting, and governance.
+Clinker India is a production-grade, multi-tenant Flask web application that plans clinker production, allocation, transport, and inventory across Integrated Units (IUs) and Grinding Units (GUs). It couples a MILP optimization engine (PuLP/CBC) with a clean, accessible light-theme SaaS UI for tenant onboarding, OTP-secured access, scenario setup, execution (deterministic, stochastic, robust), reporting, and governance.
 
 **Real-World Problem and Why This Exists**
 - Clinker must flow from IUs to IUs/GUs over multiple periods via road, rail, or sea, each with trip capacity, minimum batch size (SBQ), integer trip limits, and costs.
@@ -17,6 +17,7 @@ Clinker India is a production-grade, multi-tenant Flask web application that pla
 - Provides multi-tenant authentication, invitation and OTP flows, subscription/seat tracking, and AI-assisted in-app guidance (Transformer Model).
 
 **Key Features (Complete List)**
+- Modern light theme UI with high contrast for accessibility, centralized CSS overrides (theme-light.css), and responsive design via Bootstrap 5.3.3.
 - Multi-tenant SaaS with org-scoped data via `TenantOwnedMixin` and SQLAlchemy loader criteria.
 - Auth flows: email/password, OTP verification, login OTP, password reset, invitation acceptance, and super-admin OTP login.
 - Roles: owner, admin, member; admin-only CRUD for plants/routes/inventory/scenarios; super-admin bypass.
@@ -55,7 +56,7 @@ Clinker India is a production-grade, multi-tenant Flask web application that pla
 - Blueprints: auth (register/login/OTP/invite/reset), billing (seat purchases), main (dashboard, chat, static pages, support), operations (network CRUD, optimization, exports, activity, notifications), tenant (guards), superadmin (privileged routes).
 - Persistence: SQLAlchemy models for organizations, users, OTPs, invitations, pricing/subscriptions/seat purchases, plants, routes, inventory, scenarios, optimization jobs/results, logs, notifications, contact requests.
 - Optimization stack: DataMapper → ModelBuilderFactory → SolverAdapter (PuLP) → ResultsParser; ScenarioManager for stochastic/robust sets; RobustSolver with pre-checks and fallbacks.
-- Frontend: Jinja templates, WTForms, static assets (CSS/JS), with contextual AI guidance.
+- Frontend: Jinja templates, WTForms, static assets (CSS/JS with light theme and centralized overrides), with contextual AI guidance and AI chat widget.
 
 **Technology Stack**
 - Python, Flask, SQLAlchemy, Flask-Login, Flask-WTF, Flask-Mail, Flask-Migrate
@@ -94,7 +95,7 @@ Clinker India is a production-grade, multi-tenant Flask web application that pla
 
 **Backend / Frontend / Database**
 - Backend: Flask blueprints with ORM models; CBC solver via PuLP; mail via Flask-Mail.
-- Frontend: Jinja templates, WTForms, static CSS/JS (including `ai-chat.js` and button spinners), PDF styling via ReportLab.
+- Frontend: Jinja templates, WTForms, light theme UI with Bootstrap 5.3.3; static CSS/JS (including `theme-light.css` for centralized overrides, `ai-chat.js` for AI widget, and button spinners); PDF styling via ReportLab.
 - Database: SQLite default under `instance/app.db`; Alembic migrations stored in [migrations/](migrations/).
 
 **Data Models / Entities (selected)**

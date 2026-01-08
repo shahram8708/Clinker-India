@@ -1,5 +1,5 @@
 :root {
-  --register-accent: linear-gradient(135deg, rgba(124, 93, 255, 0.22), rgba(93, 214, 255, 0.18));
+  --register-accent: #007bff;
 }
 
 .auth-shell {
@@ -10,41 +10,30 @@
   position: relative;
   overflow: hidden;
   padding: 26px 24px;
-  background: linear-gradient(150deg, rgba(17, 24, 39, 0.92), rgba(12, 17, 26, 0.88));
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 20px;
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
 }
 
 .register-hero__bg {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at 20% 20%, rgba(124, 93, 255, 0.18), transparent 40%),
-    radial-gradient(circle at 80% 10%, rgba(93, 214, 255, 0.16), transparent 42%),
-    radial-gradient(circle at 50% 80%, rgba(45, 212, 191, 0.12), transparent 42%);
-  filter: blur(12px);
-  opacity: 0.9;
+  display: none;
 }
 
 .register-hero::after {
-  content: "";
-  position: absolute;
-  inset: 6px;
-  border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  pointer-events: none;
+  display: none;
 }
 
 .register-avatar {
   width: 54px;
   height: 54px;
-  border-radius: 16px;
+  border-radius: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   background: var(--register-accent);
-  color: #e9edff;
+  color: #ffffff;
   font-size: 1.3rem;
-  box-shadow: 0 10px 30px rgba(124, 93, 255, 0.25);
+  box-shadow: none;
 }
 
 .pill-soft {

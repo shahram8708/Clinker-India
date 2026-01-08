@@ -149,9 +149,16 @@
       sendBtn.disabled = true;
       setTyping(true);
 
+      const combinedContext = [
+        getPageContext(),
+        typeof config.pageContext === "string" ? limitLength(config.pageContext, 2000) : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+
       const payload = {
         messages: compactHistory(),
-        pageContext: getPageContext(),
+        pageContext: combinedContext,
       };
 
       try {

@@ -362,5 +362,46 @@
 
 {% block scripts %}
   {{ super() }}
+  <script>
+    (function() {
+      const ctxLines = [];
+      ctxLines.push("Dashboard context: key counts and working items.");
+      ctxLines.push("Plants: {{ metrics.total_plants }} total (IU {{ metrics.iu_count }}, GU {{ metrics.gu_count }}).");
+      ctxLines.push("Active routes: {{ metrics.active_routes }}.");
+      ctxLines.push("Scenarios: {{ metrics.scenario_count }}; Inventory alerts: {{ inventory_alerts|length }}.");
+
+      ctxLines.push("Plants (sample):");
+      {% for plant in plants[:8] %}
+        ctxLines.push({{ ("- %s [%s] in %s: production %.2f, consumption %.2f, max inventory %.2f." % (
+          plant.plant_name,
+          plant.plant_type,
+          plant.location,
+          plant.production_capacity or 0,
+          plant.consumption_capacity or 0,
+          plant.max_inventory_capacity or 0,
+        )) | tojson }});
+      {% endfor %}
+      {% if plants|length > 8 %}
+        ctxLines.push({{ ("...%d more plants not listed." % (plants|length - 8)) | tojson }});
+      {% endif %}
+
+      ctxLines.push("Routes (sample):");
+      {% for route in routes[:8] %}
+        ctxLines.push({{ ("- %s -> %s via %s (%s)." % (
+          route.source_plant.plant_name,
+          route.destination_plant.plant_name,
+          route.mode,
+          route.status,
+        )) | tojson }});
+      {% endfor %}
+      {% if routes|length > 8 %}
+        ctxLines.push({{ ("...%d more routes not listed." % (routes|length - 8)) | tojson }});
+      {% endif %}
+
+      window.aiChatConfig = Object.assign(window.aiChatConfig || {}, {
+        pageContext: ctxLines.join("\n")
+      });
+    })();
+  </script>
   <script src="{{ url_for('static', filename='js/button_spinner.js') }}"></script>
 {% endblock %}

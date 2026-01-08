@@ -8,7 +8,7 @@ import google.generativeai as genai
 
 MAX_MESSAGES = 5
 MAX_CHARS = 1200
-PAGE_CONTEXT_LIMIT = 900
+PAGE_CONTEXT_LIMIT = 1800
 
 
 class ChatMessage(TypedDict):
@@ -49,14 +49,14 @@ def _get_model() -> genai.GenerativeModel:
         model_name="gemini-2.5-flash",
         system_instruction=(
             "You are the in-product AI guide for the Clinker India dashboard. "
-            "Be concise, use Markdown, and prefer short bullet lists. "
-            "Lean on the provided page context when the user asks about the current page. "
-            "If information is missing, say so briefly."
+            "Use Markdown with clear sections and bullet lists. "
+            "When the page context includes data (plants, routes, scenarios, metrics), restate it fully and clearly—do not truncate or summarize away concrete items. "
+            "If something is truly missing, say so briefly, but otherwise provide a complete answer based on the supplied context."
         ),
         generation_config={
             "temperature": 0.35,
             "top_p": 0.9,
-            "max_output_tokens": 500,
+            "max_output_tokens": 1200,
         },
     )
 

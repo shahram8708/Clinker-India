@@ -435,6 +435,39 @@ def accept_self_invitation(invitation_id: int):
     return redirect(url_for("main.dashboard"))
 
 
+def _build_ai_context(org_id: int) -> str:
+    """Assemble a short domain context for the AI with plant capacities."""
+    plants = (
+        Plant.for_org(org_id)
+        .order_by(Plant.plant_name)
+        .all()
+    )
+
+    if not plants:
+        return ""
+
+    total_production = sum(_safe_float(plant.production_capacity) for plant in plants)
+    total_consumption = sum(_safe_float(plant.consumption_capacity) for plant in plants)
+    total_inventory = sum(_safe_float(plant.max_inventory_capacity) for plant in plants)
+
+    lines = [
+        f"Plant summary: count={len(plants)}, total production capacity={total_production:.2f}, total consumption capacity={total_consumption:.2f}, total max inventory={total_inventory:.2f}.",
+        "Plant details (trimmed):",
+    ]
+
+    max_listed = 12
+    for plant in plants[:max_listed]:
+        location = plant.location or "N/A"
+        lines.append(
+            f"{plant.plant_name} [{plant.plant_type}] in {location}: production={_safe_float(plant.production_capacity):.2f}, consumption={_safe_float(plant.consumption_capacity):.2f}, max inventory={_safe_float(plant.max_inventory_capacity):.2f}.",
+        )
+
+    if len(plants) > max_listed:
+        lines.append(f"...{len(plants) - max_listed} additional plants not listed to keep context short.")
+
+    return "\n".join(lines)
+
+
 @main_bp.route("/api/chat", methods=["POST"])
 @login_required
 @tenant_required
@@ -442,6 +475,8 @@ def ai_chat():
     payload = request.get_json(silent=True) or {}
     messages = payload.get("messages") or []
     page_context = (payload.get("pageContext") or "").strip()
+    org_context = _build_ai_context(current_user.organization_id)
+    combined_context = "\n\n".join(part for part in (page_context, org_context) if part)
 
     if not isinstance(messages, list) or not messages:
         return jsonify({"error": "messages array is required"}), 400
@@ -449,7 +484,7 @@ def ai_chat():
         return jsonify({"error": "last message must come from the user"}), 400
 
     try:
-        reply = generate_chat_reply(messages, page_context)
+        reply = generate_chat_reply(messages, combined_context)
     except MissingAPIKey as exc:
         current_app.logger.warning("Gemini key missing: %s", exc)
         return jsonify({"error": "AI is not configured yet."}), 503

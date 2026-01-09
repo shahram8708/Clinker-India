@@ -1,234 +1,213 @@
-Clinker India — Multi-Period Clinker Allocation & Transport Optimizer
-===================================================================
+**Clinker India – Multi‑Tenant Supply Chain Planning SaaS**
 
-**Project Title and Short Summary**
-Clinker India is a production-grade, multi-tenant Flask web application that plans clinker production, allocation, transport, and inventory across Integrated Units (IUs) and Grinding Units (GUs). It couples a MILP optimization engine (PuLP/CBC) with a clean, accessible light-theme SaaS UI for tenant onboarding, OTP-secured access, scenario setup, execution (deterministic, stochastic, robust), reporting, and governance.
+- Cloud-native web platform for clinker/cement supply‑chain planning in India.
+- Provides tenant-isolated workspaces, OTP-secured onboarding, billing with Razorpay, AI-assisted guidance, and an elastic MILP optimization engine to design transport/production plans.
 
-**Real-World Problem and Why This Exists**
-- Clinker must flow from IUs to IUs/GUs over multiple periods via road, rail, or sea, each with trip capacity, minimum batch size (SBQ), integer trip limits, and costs.
-- Plants face production caps, safety stock, and inventory limits; demand can be uncertain. Decisions in one period affect later inventory and capacity.
-- The goal is to minimize total cost (production, transport, holding, optional shortage penalties) while meeting service levels and respecting operational constraints. Manual planning is error-prone and costly; this tool operationalizes an OR model with guardrails and governance.
+---
 
-**What This Project Does**
-- Captures plants, transport routes, inventory, and planning scenarios per tenant organization.
-- Runs deterministic, scenario-based stochastic, or robust (worst-case demand uplift) optimizations with integer trips and SBQ coupling.
-- Enforces safety stock, inventory capacity, production bounds, trip limits, and optional service-level (chance) constraints.
-- Surfaces production, shipment, trips, inventory, and shortage plans with KPIs, CSV exports, PDF reports, notifications, and audit logs.
-- Provides multi-tenant authentication, invitation and OTP flows, subscription/seat tracking, and AI-assisted in-app guidance (Transformer Model).
+### Table of Contents
+- Project Overview
+- Key Features
+- System Architecture & Stack
+- Technical Deep Dive
+- Installation & Setup
+- Usage Guide
+- Environment Variables
+- Screens & Flows
+- Security & Privacy
+- Performance Notes
+- Limitations & Known Issues
+- Future Enhancements
+- Business Value
+- Contribution Guide
+- Conclusion
 
-**Key Features (Complete List)**
-- Modern light theme UI with high contrast for accessibility, centralized CSS overrides (theme-light.css), and responsive design via Bootstrap 5.3.3.
-- Multi-tenant SaaS with org-scoped data via `TenantOwnedMixin` and SQLAlchemy loader criteria.
-- Auth flows: email/password, OTP verification, login OTP, password reset, invitation acceptance, and super-admin OTP login.
-- Roles: owner, admin, member; admin-only CRUD for plants/routes/inventory/scenarios; super-admin bypass.
-- Billing primitives: pricing plans, seat purchases, trial vs paid states, seat limits, Razorpay fields; subscription guard on seat allocation.
-- Operations console: create/edit plants (IU/GU), routes (mode, capacity, SBQ, trip caps, costs), inventory, scenarios; filter tables; inline edits.
-- Optimization engine: deterministic MILP; stochastic extensive-form; robust worst-case with stress scenarios and heuristics fallback; runtime limit support.
-- Constraint realism: integer trips, SBQ lower bounds, trip capacity, production caps, safety stock, inventory caps, optional shortage with penalty and service-level cap.
-- Outputs: KPI block (costs, service level, utilization, safety gaps), production/shipment/trips/inventory/shortage plans, diagnostics, comparison of deterministic vs uncertain runs.
-- Exports and reporting: CSV datasets (plants, routes, inventory, scenarios); PDF reports (inventory health or transport network) with styled cards and highlights.
-- Notifications and activity log: user-scoped inbox, severity levels, filters, audit trail for CRUD and runs.
-- AI chat endpoint (`/api/chat`) backed by Transformer Model with page-context grounding and safety trims.
-- Support contact form with category tagging and mail-out to support admin.
+---
 
-**Who This Project Is For / Target Users**
-- Supply chain and logistics teams planning clinker flows across IUs and GUs.
-- Operations researchers and data engineers needing a reference MILP with SBQ and integer trips plus uncertainty handling.
-- Product teams building SaaS-style industrial optimization apps with tenant isolation and governance.
+### Project Overview
+- **What it is:** A SaaS web application (Flask) that lets organizations model their clinker supply chain, import structured “nine-sheet” datasets (capacity, demand, logistics, constraints, stocks, costs), and run optimization to minimize cost while meeting service levels.
+- **Goal:** Help planners balance production, transport, and inventory with tenant-level governance, billing, and analytics.
+- **Audience:** Supply-chain planners, ops managers, data analysts, finance/billing admins, and super admins overseeing all tenants.
+- **Scope:** Multi-tenant operations data management, scenario planning, deterministic elastic MILP solver, billing, analytics, and AI chat guidance.
 
-**High-Level Overview (Non-Technical)**
-- Users create an organization, invite teammates, and set up plants, routes, and inventories.
-- They define scenarios (number of periods, optional demand profile) and run an optimizer that proposes production and transport plans.
-- Results show costs, trips, shipments, inventories, and risk/service metrics, and can be exported as CSV/PDF.
-- Notifications, activity logs, and AI help text keep users informed; support requests go to admins by email.
+---
 
-**Detailed System Explanation (Technical)**
-- Flask app factory wires blueprints for auth, billing, main dashboard, operations, tenant utilities, and superadmin.
-- Tenant isolation is enforced via SQLAlchemy loader criteria and per-request session checks; non-superadmin queries auto-filter by `organization_id`.
-- Optimization pipeline: DataMapper loads active plants/routes/inventory/demand into a `CanonicalDataset`; DatasetValidator guards connectivity, demand, and capacity; ModelBuilder chooses deterministic/stochastic/robust definitions; SolverAdapter (PuLP/CBC) solves; ResultsParser computes KPIs; OptimizationResult persists plans/KPIs.
-- Stochastic mode builds scenario sets with probabilities; robust mode stresses demand via uplift multipliers and includes fallback tiers (relax routes, simplified aggregation, heuristic backup) to recover feasible plans.
-- Auth flow issues OTPs, hashes codes, rate-limits resends, and guards sessions; super-admin has a separate identity and OTP path.
-- Reporting uses ReportLab to render PDF summaries; CSV export is available for key datasets.
-- AI chat wraps `Transformer Model` with message sanitization and page-context injection.
+### Key Features
+- **Core**
+  - Multi-tenant isolation with per-org workspaces, datasets, and row-level guards via SQLAlchemy loader criteria.
+  - OTP-based auth (registration/login/invite), password resets, and enforced email verification.
+  - Scenario management with datasets for IU/GU networks, logistics, constraints, stocks, costs, and demand.
+  - Deterministic elastic MILP optimization (PuLP backend) with penalties for unmet fulfillment and stock bounds.
+  - Results parsing into KPIs (cost breakdown, service levels, utilization, constraint diagnostics).
+- **Major**
+  - Billing & seat management (Razorpay orders, signature/webhook verification, GST calculation, trials + paid seats).
+  - Super-admin console with cross-tenant analytics, suspension/reactivation, ticket triage, and forced verification.
+  - Operations console for plants, routes, inventories, demand, constraints, uploads/downloads, notifications, and activity logs.
+  - AI in-product chat (Transfomers Model) with page + org context summarization and safe history trimming.
+- **Minor/Hidden**
+  - Tenant-scoped CSV import/export for users, invites, datasets, and operations tables.
+  - CSRF protection, strong session settings, security headers, and long-lived “remember me” cookies.
+  - Seat-capacity enforcement on invites and provisioning; automatic trial bootstrap and workspace/dataset seeding.
+  - Support ticket submission with email fan-out to configured support mailbox.
+- **Admin/User**
+  - Owners/Admins: manage users, seats, invitations, datasets, routes, and optimization runs.
+  - Members: view dashboards/analytics, run chat, review scenarios.
+  - Super Admin: global analytics, billing visibility, organization status control.
 
-**Architecture / System Design**
-- Flask application factory initializes config, logging, extensions (SQLAlchemy, Flask-Migrate, LoginManager, CSRF, Mail), and blueprints.
-- Blueprints: auth (register/login/OTP/invite/reset), billing (seat purchases), main (dashboard, chat, static pages, support), operations (network CRUD, optimization, exports, activity, notifications), tenant (guards), superadmin (privileged routes).
-- Persistence: SQLAlchemy models for organizations, users, OTPs, invitations, pricing/subscriptions/seat purchases, plants, routes, inventory, scenarios, optimization jobs/results, logs, notifications, contact requests.
-- Optimization stack: DataMapper → ModelBuilderFactory → SolverAdapter (PuLP) → ResultsParser; ScenarioManager for stochastic/robust sets; RobustSolver with pre-checks and fallbacks.
-- Frontend: Jinja templates, WTForms, static assets (CSS/JS with light theme and centralized overrides), with contextual AI guidance and AI chat widget.
+---
 
-**Technology Stack**
-- Python, Flask, SQLAlchemy, Flask-Login, Flask-WTF, Flask-Mail, Flask-Migrate
-- Optimization: PuLP with CBC solver backend
-- Reporting: ReportLab for PDFs; CSV via Python stdlib
-- AI: Transformer Model (Transformer Model)
-- Database: SQLite by default (override via `DATABASE_URL`); Alembic migrations
+### System Architecture & Technology Stack
+- **Architecture:** Flask app factory pattern with blueprints (`auth`, `main`, `operations`, `billing`, `tenant`, `superadmin`). SQLAlchemy models with tenant mixin. Service-style optimization pipeline.
+- **Frontend:** Server-rendered HTML (Jinja templates), JS widgets (AI chat launcher), CSS theme files under `static/`.
+- **Backend:** Flask, Flask-Login, Flask-WTF, Flask-Mail, Flask-Migrate, SQLAlchemy, PuLP (CBC solver), Transfomers Model AI client, Requests.
+- **Data Layer:** SQLite by default (or DATABASE_URL). Alembic migrations present under versions.
+- **Optimization Flow:** DataMapper → DatasetValidator → ModelBuilderFactory (elastic) → SolverAdapter (PuLP MILP with penalties) → ResultsParser → persisted OptimizationJob/Result.
+- **Billing Flow:** Razorpay order creation → client payment → signature verification/webhook → SeatPurchase → OrganizationSubscription update.
+- **AI Flow:** JS sends compacted chat + page context to `/api/chat` → Transfomers Model model with safety + output limits → Markdown reply rendered in widget.
+- **Tenant Isolation:** `TenantOwnedMixin` plus SQLAlchemy loader criteria registered at app init; per-request org sync in `_register_request_hooks`.
 
-**How the System Works (Step-by-Step Flow)**
-1) User authenticates (registration OTP, login OTP, or super-admin OTP) and tenant context is synced per request.
-2) User creates plants (IU/GU), routes (mode, SBQ, capacity, trips, cost), and inventory snapshots; scenarios capture period count and optional demand profile.
-3) User submits an optimization run with mode, runtime, shortage policy, service-level target, scenario samples, or demand uplift.
-4) Engine loads canonical data, validates feasibility, builds the model, and invokes SolverAdapter (deterministic/stochastic/robust path).
-5) Solver returns plans and costs; ResultsParser derives KPIs (service level, utilization, costs, safety gaps, trips/shipments by route/destination).
-6) Results are persisted, surfaced on the UI, compared against deterministic baseline for uncertainty modes, and available for CSV/PDF export.
-7) ActivityLog and Notifications record the run; users can download reports or continue iterating.
+---
 
-**Algorithms / Logic / Technical Concepts**
-- Deterministic MILP with decision variables: production `X`, shipments `Ship`, trips `Trips` (integer), inventory `Inv`, optional shortage `Shortage`.
-- Constraints: production caps at IUs; zero production at GUs; inventory balance per plant-period; safety stock lower bound; max inventory capacity; shipment bound by trip capacity and SBQ; integer trip limits; optional chance-style cap on total shortage.
-- Objective: minimize production + transport (per-trip and per-ton) + holding + optional shortage penalties.
-- Stochastic: extensive-form model with shared first-stage variables; scenarios built from demand multipliers with normalized probabilities; reliability score via weighted service level and chance constraint check.
-- Robust: demand uplift scenarios; min-max formulation or fallback tiers (soft relaxation, simplified aggregation, heuristic backup) with pre-solve feasibility screens (supply vs demand, connectivity, inventory logic, integer traps).
-- Diagnostics: prechecks, solver status, MIP gap, shortage totals, validation issues embedded in KPIs.
+### Technical Deep Dive
+- **Languages:** Python, JavaScript, HTML, CSS.
+- **Key Modules**
+  - App factory and tenant hooks in __init__.py.
+  - Config & env parsing in config.py; secret key enforcement and secure cookie defaults.
+  - ORM models for orgs, users, OTPs, subscriptions, plants, routes, inventories, scenarios, jobs/results in models.py.
+  - Auth flows, OTP issuance/validation, invites, password reset in routes.py; forms in forms.py.
+  - Super-admin identity and OTP in super_admin.py.
+  - Dashboards, analytics, AI chat endpoint, support tickets in routes.py; chat service in chat_service.py.
+  - Operations CRUD, CSV/PDF export/import, scenario and optimization orchestration in routes.py with forms in forms.py.
+  - Optimization pipeline in optimization: data mapping, validation, MILP build/solve, parsing, and optional robust/stochastic scaffolding.
+  - Billing + Razorpay integration in routes.py.
+  - Tenant governance helpers in utils.py.
+  - Superadmin analytics in routes.py.
+  - AI chat widget script in ai-chat.js.
+- **Business Logic Highlights**
+  - Seat limits combine trial and paid seats; invites/provisioning blocked when over limit.
+  - OTP cooldowns, max attempts, and expiry per user; similar controls for super admin OTP.
+  - Elastic MILP enforces production caps, trip capacity vs SBQ, min/max closing stock, optional flow constraints, and shortage penalties.
+  - Results include service levels, transport cost by mode, utilization, constraint diagnostics, and safety/max-stock violation flags.
+- **Dependencies:** See requirements.txt (Flask, SQLAlchemy, PuLP, requests, etc.).
 
-**Modules / Components Breakdown**
-- App setup: [app/__init__.py](app/__init__.py) configures app, logging, extensions, blueprints, and error handlers.
-- Config: [app/config.py](app/config.py) environment-driven settings for security, mail, OTP, billing, and DB.
-- Models: [app/models.py](app/models.py) defines all domain entities with constraints and helper methods.
-- Auth: [app/auth/routes.py](app/auth/routes.py) handles register/login/OTP/reset/invite/bulk invite/provision; super-admin helpers in [app/auth/super_admin.py](app/auth/super_admin.py).
-- Tenant isolation: [app/tenant/utils.py](app/tenant/utils.py) enforces org scoping via loader criteria and decorators.
-- Dashboard and AI: [app/main/routes.py](app/main/routes.py) for dashboard metrics, invite acceptance, pages, support; AI chat in [app/main/chat_service.py](app/main/chat_service.py).
-- Operations: [app/operations/routes.py](app/operations/routes.py) for CRUD, filters, optimization runs, exports, PDFs, notifications, activity log.
-- Optimization core: Data mapping [app/optimization/data_mapper.py](app/optimization/data_mapper.py); model builders [app/optimization/model_builder.py](app/optimization/model_builder.py); solvers [app/optimization/deterministic_solver.py](app/optimization/deterministic_solver.py), [app/optimization/stochastic_solver.py](app/optimization/stochastic_solver.py), [app/optimization/robust_solver.py](app/optimization/robust_solver.py); adapter [app/optimization/solver_adapter.py](app/optimization/solver_adapter.py); scenario management [app/optimization/scenario_manager.py](app/optimization/scenario_manager.py); validation [app/optimization/validators.py](app/optimization/validators.py); parsing [app/optimization/results_parser.py](app/optimization/results_parser.py).
-- Entrypoint: [run.py](run.py) starts the app without the Flask reloader.
+---
 
-**Backend / Frontend / Database**
-- Backend: Flask blueprints with ORM models; CBC solver via PuLP; mail via Flask-Mail.
-- Frontend: Jinja templates, WTForms, light theme UI with Bootstrap 5.3.3; static CSS/JS (including `theme-light.css` for centralized overrides, `ai-chat.js` for AI widget, and button spinners); PDF styling via ReportLab.
-- Database: SQLite default under `instance/app.db`; Alembic migrations stored in [migrations/](migrations/).
+### Installation & Setup
+- **Prerequisites:** Python 3.11+, pip, SQLite (or external DB), PuLP solver backend (CBC ships with PuLP), internet for Razorpay/Transfomers Model if used.
+- **Steps**
+  1) Clone repo; `cd Clinker-India`.
+  2) `python -m venv .venv && .venv\Scripts\activate` (Windows).
+  3) `pip install -r requirements.txt`.
+  4) Create .env with required variables (see below).
+  5) Initialize DB (for SQLite, auto-created on first run). For migrations: `flask db upgrade` (set `FLASK_APP=run.py`).
+  6) Run: `python run.py` (sets up app factory, no reloader).
+  7) Open `http://localhost:5000`.
+- **Troubleshooting**
+  - “SECRET_KEY must be set”: define strong SECRET_KEY.
+  - Missing PuLP: `pip install pulp`.
+  - Razorpay errors: verify keys and webhook secret.
 
-**Data Models / Entities (selected)**
-- `Organization`, `OrganizationSubscription`, `PricingPlan`, `SeatPurchase`
-- `User` (role, lifecycle, verification), `EmailOTP`, `PasswordResetToken`, `SuperAdminOTP`, `UserInvitation`
-- `Plant` (IU/GU, capacities, costs, safety stock), `TransportRoute` (mode, capacity, SBQ, trips, costs), `Inventory`
-- `PlanningScenario` (periods, status, summary/demand), `OptimizationJob`, `OptimizationResult`
-- `ActivityLog`, `Notification`, `ContactRequest`
+---
 
-**APIs / Endpoints (representative)**
-- Auth: `/auth/register`, `/auth/login`, `/auth/logout`, `/auth/verify/registration`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/invite`, `/auth/bulk-invite`, `/auth/provision`
-- Dashboard: `/dashboard`, `/invitations/<id>/accept-self`, `/api/chat`
-- Operations: `/ops/network` (CRUD + forms), `/ops/optimization/run`, `/ops/exports/csv`, `/ops/exports/pdf`, `/ops/activity`, `/ops/notifications`
-- Static pages/support: `/about`, `/terms`, `/privacy`, `/contact-support`
+### Usage Guide
+- **Auth & Onboarding**
+  - Register with org name, admin name, email, password → receive OTP → verify to activate and auto-create trial subscription/workspace.
+  - Login with password + optional OTP; resend limited by cooldown.
+  - Invite users (single/bulk CSV). Invited users accept via token, set password, verify OTP.
+- **Dashboards**
+  - View KPIs (users, invites, plants, routes, scenarios), inventory alerts, recent routes/plants/scenarios, and pending invites.
+  - Analytics page shows role mix, invite velocity, routes by mode, inventory utilization, scenario costs, job statuses, and notifications.
+- **Operations**
+  - Manage plants (IU/GU), routes (Road/Rail/Sea), inventories, demands, capacities, costs, opening/closing stocks, constraints, hub stock.
+  - Workspaces and datasets: auto-bootstrap defaults; create scenarios with periods and statuses.
+  - Upload/download CSVs per table; export reports/optimization outputs.
+  - Run optimization: pick scenario, mode (elastic/deterministic), optional limits/penalties → job result stored with plans, KPIs, diagnostics.
+- **Billing**
+  - View seat status; create Razorpay order for seats; verify payment; webhook fallback; seat counters update subscription status.
+- **AI Chat**
+  - Open floating chat, type question; widget sends last messages + page context to `/api/chat`; Transfomers Model replies with Markdown guidance.
 
-**Security Measures and Authentication**
-- OTP for registration, login, invites, and super-admin; hashed codes, max attempts, resend cooldowns, expiry times.
-- CSRF protection via Flask-WTF; security headers added after each request.
-- Session hardening: HTTPOnly cookies, strong session protection, optional Secure/SameSite flags.
-- Tenant enforcement: per-request org validation and SQLAlchemy loader criteria to prevent cross-org access.
-- Password reset tokens with split identifier/secret, single-use invalidation, expiry, and IP/UA logging.
+---
 
-**Performance and Scalability Discussion**
-- CBC via PuLP is suitable for moderate networks; pluggable solver adapter allows upgrading to commercial solvers.
-- Stochastic extensive-form scales with scenario count and periods; scenario_samples should be constrained.
-- Robust solver includes relaxed and aggregated fallbacks to recover feasibility; demand uplift configurable.
-- DataMapper filters to active plants/routes to reduce model size; inventory/demand defaults guard sparse data.
+### Environment Variables
+- **Core:** `SECRET_KEY` (required), `DATABASE_URL` (optional; defaults to instance/app.db).
+- **OTP/Auth:** `OTP_LENGTH`, `OTP_EXPIRY_MINUTES`, `OTP_RESEND_SECONDS`, `OTP_MAX_ATTEMPTS`, `LOGIN_OTP_COOLDOWN_SECONDS`, `PASSWORD_RESET_EXPIRY_MINUTES`, `PASSWORD_RESET_TOKEN_BYTES`.
+- **Super Admin:** `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD`, `SUPER_ADMIN_PASSWORD_IS_HASHED`, `SUPER_ADMIN_OTP_LENGTH`, `SUPER_ADMIN_OTP_EXPIRY_MINUTES`, `SUPER_ADMIN_OTP_RESEND_SECONDS`, `SUPER_ADMIN_OTP_MAX_ATTEMPTS`, `SUPER_ADMIN_RATE_LIMIT_PER_MINUTE`.
+- **Mail:** `MAIL_SERVER`, `MAIL_PORT`, `MAIL_USE_TLS`, `MAIL_USE_SSL`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_DEFAULT_SENDER`, `MAIL_SUPPRESS_SEND`, `MAIL_MAX_EMAILS`.
+- **Support:** `SUPPORT_ADMIN_EMAIL`.
+- **Pricing/Billing:** `DEFAULT_PLAN_CODE`, `PRICING_BASE_AMOUNT_INR`, `PRICING_PER_SEAT_INR`, `GST_RATE`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`.
+- **Cookie/Security (prod):** `SESSION_COOKIE_SECURE`, `REMEMBER_COOKIE_SECURE` (set automatically in ProductionConfig).
 
-**Input Requirements / Data Needed**
-- Plants: name, type (IU/GU), location, production capacity/cost, holding cost, consumption capacity, max inventory, safety stock, status.
-- Routes: source plant, destination plant, mode (Road/Rail/Sea), trip capacity, SBQ, max trips/period, cost per trip/ton, lead time (optional), status.
-- Inventory: current inventory per plant.
-- Scenarios: scenario name, periods, optional demand profile or embedded demand in summary.
-- Run options: mode, runtime limit, demand uplift %, scenario samples, allow_shortage flag, shortage_penalty, service_level_target, mark scenario completed.
+---
 
-**Outputs / Results / KPIs**
-- Cost breakdown: production, transport, holding, shortage; worst-case cost for robust; comparison vs deterministic for uncertainty modes.
-- Plans: production per IU-period; shipments per route-period; trips per route-period; inventory per plant-period; shortages per plant-period (if enabled).
-- KPIs: service level %, reliability score, risk exposure, production/transport utilization, total shipped/trips/produced, inventory slack, safety stock gaps, trips by route, shipments by destination, validation warnings.
-- Exports: CSV datasets; PDF reports for inventory health or transport network; structured storage payload for robust runs.
+### Screens & Flows
+- **Auth Pages:** Register, login (with OTP), verify registration OTP, forgot/reset password, accept invite, bulk invites/provision.
+- **Dashboard:** Org KPIs, alerts, routes/plants/scenarios cards, pending invites banner.
+- **Analytics:** Charts for users/invites/routes/inventory/scenarios/jobs/notifications/seats.
+- **Operations Network:** Tabs for plants, routes, inventory, demand/capacity/costs, logistics, constraints, stocks, scenarios, optimization runs, exports.
+- **Billing:** Upgrade/payments with Razorpay checkout; purchase history.
+- **Superadmin:** Global dashboard and analytics with revenue, seats, activity, support tickets; controls for org status and user verification.
+- **AI Chat Panel:** Slide-over widget with conversation history and Markdown rendering.
 
-**Installation Guide (Step-by-Step)**
-1) Clone: `git clone https://github.com/shahram8708/Clinker-India` and `cd Clinker-India`.
-2) Create and activate a Python virtual environment.
-3) Install dependencies: `pip install -r requirements.txt`.
-4) Copy environment variables into `.env` (no sample file is provided); set at least `SECRET_KEY`.
-5) Initialize the database: `flask db upgrade` (set `FLASK_APP=run.py` if needed).
-6) (Optional) Create `instance/` directory if not auto-created.
+---
 
-**Environment Variables and Configuration**
-- Required: `SECRET_KEY`.
-- Database: `DATABASE_URL` (defaults to SQLite under instance/app.db, auto-normalized on Windows paths).
-- Mail/OTP: `MAIL_SERVER`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_DEFAULT_SENDER`, `MAIL_USE_TLS`, `MAIL_USE_SSL`, `MAIL_SUPPRESS_SEND`, `MAIL_MAX_EMAILS`, OTP settings (`OTP_LENGTH`, `OTP_EXPIRY_MINUTES`, `OTP_RESEND_SECONDS`, `OTP_MAX_ATTEMPTS`, `LOGIN_OTP_COOLDOWN_SECONDS`, `PASSWORD_RESET_EXPIRY_MINUTES`, `PASSWORD_RESET_TOKEN_BYTES`).
-- Super admin: `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD`, `SUPER_ADMIN_PASSWORD_IS_HASHED`, `SUPER_ADMIN_OTP_LENGTH`, `SUPER_ADMIN_OTP_EXPIRY_MINUTES`, `SUPER_ADMIN_OTP_RESEND_SECONDS`, `SUPER_ADMIN_OTP_MAX_ATTEMPTS`, `SUPER_ADMIN_RATE_LIMIT_PER_MINUTE`.
-- Billing: `DEFAULT_PLAN_CODE`, `PRICING_BASE_AMOUNT_INR`, `PRICING_PER_SEAT_INR`, `GST_RATE`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`.
-- Security cookies: `SESSION_COOKIE_HTTPONLY`, `REMEMBER_COOKIE_HTTPONLY`, `SESSION_COOKIE_SAMESITE`, `REMEMBER_COOKIE_SAMESITE`, enable `SESSION_COOKIE_SECURE` and `REMEMBER_COOKIE_SECURE` in production.
+### Security & Privacy Notes
+- CSRF protection on forms and API chat; secure cookies (HttpOnly, SameSite Lax, Secure in production).
+- Session/org sync per request; tenant isolation via loader criteria and decorators.
+- OTP codes hashed, attempt-limited, and expiration enforced; password reset tokens single-use with expiry.
+- Super-admin access gated by env credentials + OTP; global guard on blueprint.
+- Razorpay signatures verified for payments/webhooks.
+- Mail sending wrapped with exception handling to avoid crashes.
+- Recommendation: enforce HTTPS, rotate secrets, harden CSP/Rate limits at reverse proxy, and store secrets outside repo.
 
-**Running Locally (Development Mode)**
-- Set `FLASK_ENV=development` (default). Run `flask run` or `python run.py` (reloader disabled in `run.py`).
-- Default database is SQLite; instance folder is created on start if missing.
+---
 
-**Running in Production**
-- Set `FLASK_ENV=production`; provide strong `SECRET_KEY` and production `DATABASE_URL`.
-- Serve via Gunicorn/Uvicorn or equivalent: `gunicorn -w 4 -b 0.0.0.0:8000 run:app` behind a reverse proxy with TLS termination and secure cookies enabled.
-- Run `flask db upgrade` on deploy; ensure instance directory is writable and mail credentials are valid.
+### Performance & Optimization Notes
+- PuLP CBC solver used; runtime limit configurable per job.
+- Elastic penalties allow feasible plans even with tight constraints; shortage penalty tunable.
+- DataMapper reduces dataset to canonical form; batching constraints grouped to reduce MILP size.
+- Analytics queries limited (recent windows, limits) to avoid heavy loads.
+- Suggestions: add background worker for long runs, cache analytics aggregates, and pre-validate large CSV uploads asynchronously.
 
-**Usage Guide (Step-by-Step)**
-1) Register org admin, verify email via OTP, and sign in.
-2) Add plants (IU/GU) with capacities, costs, and safety stock; add transport routes with mode, SBQ, capacity, trip caps, and costs; record inventory levels.
-3) Create planning scenarios (periods, optional demand). Demand defaults to GU consumption if not provided.
-4) From `/ops/network`, configure an optimization run: choose mode, runtime limit, shortage policy, penalty, service-level target, scenario samples, demand uplift, and mark scenario completion if desired.
-5) Run optimization, review KPIs and plans; download CSV/PDF; mark scenarios executed/completed.
-6) Manage invites/users, monitor notifications and activity log, request support, and use AI chat for guidance.
+---
 
-**Examples / Demo Scenarios**
-- Deterministic: mode `deterministic`, allow_shortage false, shortage_penalty unused, service_level_target optional.
-- Stochastic: mode `stochastic`, scenario_samples=3, allow_shortage true, shortage_penalty set, service_level_target=0.95.
-- Robust: mode `robust`, demand_uplift_pct=0.1 to hedge 10 percent demand growth; compare worst-case vs deterministic in KPIs.
+### Limitations & Known Issues
+- Robust/stochastic solvers are scaffolded; elastic/deterministic path is primary.
+- No built-in file storage abstraction for large datasets; uploads processed in-memory.
+- CBC solver only; no commercial solver hook yet.
+- Limited input validation on some CSV schemas beyond current checks.
+- AI chat depends on external Transfomers Model availability and configured key.
 
-**Deployment Guide**
-- Build/collect env vars, run migrations, and start via Gunicorn as above.
-- Place behind a reverse proxy (Nginx/ALB) with TLS; enable Secure cookies; configure health checks on `/` or `/dashboard`.
-- Rotate `SECRET_KEY` and mail credentials securely; ensure `instance/` is writable for SQLite.
+---
 
-**Troubleshooting Guide**
-- Optimization fails precheck: check supply vs demand, missing inbound routes for GUs, SBQ > trip capacity, or inventory exceeding capacity; enable shortage or relax SBQ/trip caps.
-- Seat allocation blocked: subscription status may be `subscription_required` or seats exhausted; purchase seats or update billing config.
-- Emails not sent: verify mail server/ports/credentials; disable `MAIL_SUPPRESS_SEND`.
-- SQLite locking in multi-process: migrate to Postgres/MySQL via `DATABASE_URL`.
+### Future Enhancements
+1) Pluggable solvers (Gurobi/CPLEX) with selectable backends.
+2) Async job queue + progress notifications/websocket updates.
+3) Rich data lineage and versioning for datasets.
+4) Extended constraint types (emissions, budgets, multi-commodity).
+5) Audit log exports and SIEM hooks.
+6) Fine-grained role/permission model beyond owner/admin/member.
+7) UI polish for optimization visualizations (network maps, Sankey flows).
 
-**Error Handling and Limitations**
-- Missing or weak `SECRET_KEY` raises at startup.
-- If supply plus initial inventory is below demand and shortage not allowed, solver precheck returns infeasible.
-- CBC solver limits scale for very large instances; integer trip constraints may increase solve time.
-- AI chat returns 503 if key missing; errors are logged with safe messages to users.
-- Robust solver flags integer traps (e.g., max_trips=0) and safety-capacity conflicts.
+---
 
-**Security Notes / Best Practices**
-- Keep `SECRET_KEY` secret and rotate periodically.
-- Enable HTTPS, `SESSION_COOKIE_SECURE`, `REMEMBER_COOKIE_SECURE`, and strict SameSite in production.
-- Limit OTP resend rates and monitor super-admin OTP usage; prefer hashed super-admin password in env (`SUPER_ADMIN_PASSWORD_IS_HASHED=true`).
-- Enforce least privilege: owner/admin for CRUD; members read-only.
-- Keep dependencies patched; run `pip install -r requirements.txt` after updates.
+### Business Value
+- **Who benefits:** Cement/clinker producers, logistics teams, and regional planners needing rapid what-if analysis.
+- **Why it matters:** Reduces transport and production cost, improves service levels, enforces governance, and streamlines billing/seating.
+- **Vision:** Become a turnkey planning copilot for industrial supply chains with AI-guided insights and automated optimizations.
 
-**Performance Tips**
-- Limit periods and scenario_samples to keep MILP tractable; set `runtime_limit` when invoking solver.
-- Prune inactive plants/routes; ensure SBQ <= trip capacity to avoid traps.
-- Use demand aggregation in robust runs when scale grows; consider switching solver adapter for large instances.
+---
 
-**Roadmap / Future Enhancements**
-- Cement-stage expansion and carbon constraints.
-- Faster solver plugins (e.g., Gurobi) via SolverAdapter abstraction.
-- Richer uncertainty modeling, dynamic scenario generation, and visualization of routes/flows.
-- Deeper dashboards, maps, and live ERP/production system integrations.
+### Contribution Guide
+- Fork and branch from `main`; keep changes tenant-safe.
+- Add/adjust forms, routes, and models within their blueprints; maintain CSRF and tenant decorators.
+- Write migrations for model changes; keep validation in `DatasetValidator`.
+- Testing: manual runs of auth/OTP, a sample optimization job, and billing sandbox where applicable.
+- Submit PRs with clear description, screenshots for UI, and migration notes.
 
-**Why This Project Is Powerful / Impactful**
-- Combines realistic transport and inventory constraints with uncertainty handling for actionable clinker plans.
-- Delivers SaaS-ready governance (tenancy, roles, billing, auditability) plus AI assistance, making it deployable in industrial contexts.
-- Produces exportable plans and KPIs that align with operational constraints (integer trips, SBQ, safety stock).
+---
 
-**Contribution Guidelines**
-- Fork the repository, create feature branches, and open pull requests.
-- Add tests where possible; keep tenant isolation and security constraints intact.
-- Coordinate schema changes with Alembic migrations under `migrations/`.
+---
 
-**Credits / Authors**
-- Built by Shah Ram and the Clinker India engineering team; thanks to the open-source ecosystem (Flask, SQLAlchemy, PuLP, CBC, ReportLab, Transformer Model).
-
-**License**
-- License file not provided. Add a LICENSE file to declare terms before distribution.
-
-**FAQ**
-- Can shortages be disallowed? Yes; set allow_shortage false (default) to force strict service, or true with penalties and service-level target.
-- Can GUs produce clinker? No; constraints set GU production to zero.
-- What happens if safety stock exceeds capacity? Validators raise errors; robust prechecks surface warnings.
-- How are tenants isolated? `TenantOwnedMixin` plus SQLAlchemy loader criteria and per-request session guards enforce organization scoping.
+### Conclusion
+Clinker India delivers a secure, tenant-aware supply-chain planning SaaS with OTP onboarding, billing, analytics, AI guidance, and an elastic MILP optimizer. Configure the environment, load your datasets, and run scenarios to uncover cost-effective, reliable transport and production plans.

@@ -145,12 +145,11 @@ class OptimizationRunForm(FlaskForm):
     mode = SelectField(
         "Mode",
         choices=[
-            ("deterministic", "Deterministic"),
-            ("stochastic", "Scenario-based"),
-            ("robust", "Robust"),
+            ("elastic", "Elastic (default)"),
+            ("deterministic", "Deterministic (alias)"),
         ],
         validators=[InputRequired()],
-        default="deterministic",
+        default="elastic",
     )
     runtime_limit = IntegerField("Time limit (s)", validators=[Optional(), NumberRange(min=1, max=600)])
     demand_uplift_pct = DecimalField("Demand buffer %", validators=[Optional(), NumberRange(min=0, max=1)], places=2, default=0)

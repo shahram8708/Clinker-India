@@ -1,4 +1,4 @@
-"""Model builders translating canonical data into solver-ready formulations."""
+"""Model builder translating canonical data into the elastic MILP definition."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -12,99 +12,44 @@ if TYPE_CHECKING:  # pragma: no cover - type checking only
 
 @dataclass
 class ModelDefinition:
-    """Solver-ready structure describing the optimization problem."""
+    """Solver-ready structure describing the elastic optimization problem."""
 
     dataset: CanonicalDataset
-    mode: str
-    stochastic_formulation: str = "extensive"
-    uncertainty: dict[str, float] = field(default_factory=dict)
-    scenario_weights: list[float] = field(default_factory=list)
+    mode: str = "elastic"
     metadata: dict[str, Any] = field(default_factory=dict)
+    penalty_min_fulfillment: float = 1_000_000.0
+    penalty_min_stock: float = 10_000.0
+    penalty_max_stock: float = 1_000.0
+    penalty_service_level: float = 1_000_000.0
     allow_shortage: bool = False
     shortage_penalty: float = 0.0
     service_level_target: float | None = None
-    robust_multiplier: float | None = None
+    strict_service: bool = True
 
 
-class DeterministicModelBuilder:
+class ElasticModelBuilder:
     def build(self, dataset: CanonicalDataset, request: "OptimizationRequest") -> ModelDefinition:
         return ModelDefinition(
             dataset=dataset,
-            mode="deterministic",
-            stochastic_formulation="deterministic",
+            mode="elastic",
             metadata={"periods": dataset.periods},
-            allow_shortage=bool(getattr(request, "allow_shortage", False)),
-            shortage_penalty=float(getattr(request, "shortage_penalty", 0.0) or 0.0),
-            service_level_target=float(request.service_level_target) if getattr(request, "service_level_target", None) is not None else None,
-        )
-
-
-class StochasticModelBuilder:
-    def build(self, dataset: CanonicalDataset, request: "OptimizationRequest") -> ModelDefinition:
-        weight = 1.0 / max(request.scenario_samples or 1, 1)
-        weights = [weight] * max(request.scenario_samples or 1, 1)
-        formulation = "extensive"
-        return ModelDefinition(
-            dataset=dataset,
-            mode="stochastic",
-            stochastic_formulation=formulation,
-            scenario_weights=weights,
-            metadata={"periods": dataset.periods, "scenario_samples": request.scenario_samples or 1},
-            allow_shortage=bool(getattr(request, "allow_shortage", False)),
-            shortage_penalty=float(getattr(request, "shortage_penalty", 0.0) or 0.0),
-            service_level_target=float(request.service_level_target) if getattr(request, "service_level_target", None) is not None else None,
-        )
-
-
-class RobustModelBuilder:
-    def build(self, dataset: CanonicalDataset, request: "OptimizationRequest") -> ModelDefinition:
-        uncertainty = {"demand_uplift_pct": request.demand_uplift_pct or 0.0}
-        stressed = {
-            plant_id: [qty * (1 + uncertainty["demand_uplift_pct"]) for qty in per_period]
-            for plant_id, per_period in dataset.demand.items()
-        }
-        # Create robust dataset with stressed demand, preserving all extended parameters
-        robust_dataset = CanonicalDataset(
-            organization_id=dataset.organization_id,
-            scenario_id=dataset.scenario_id,
-            periods=dataset.periods,
-            plants=dataset.plants,
-            routes=dataset.routes,
-            inventory=dataset.inventory,
-            demand=stressed,
-            safety_stock=dataset.safety_stock,
-            min_fulfillment=dataset.min_fulfillment,
-            metadata={**dataset.metadata, "robust_applied": True, "robust_formulation": "minmax"},
-            # Carry forward extended parameters
-            period_specific_costs=dataset.period_specific_costs,
-            batch_multipliers=dataset.batch_multipliers,
-            freight_costs=dataset.freight_costs,
-            handling_costs=dataset.handling_costs,
-            hub_codes=dataset.hub_codes,
-            iugu_constraints=dataset.iugu_constraints,
-            period_capacities=dataset.period_capacities,
-            period_demands=dataset.period_demands,
-        )
-        return ModelDefinition(
-            dataset=robust_dataset,
-            mode="robust",
-            stochastic_formulation="robust",
-            uncertainty=uncertainty,
-            metadata=robust_dataset.metadata,
-            allow_shortage=bool(getattr(request, "allow_shortage", False)),
-            shortage_penalty=float(getattr(request, "shortage_penalty", 0.0) or 0.0),
-            service_level_target=float(request.service_level_target) if getattr(request, "service_level_target", None) is not None else None,
-            robust_multiplier=uncertainty["demand_uplift_pct"],
+            penalty_min_fulfillment=1_000_000.0,
+            penalty_min_stock=10_000.0,
+            penalty_max_stock=1_000.0,
+            penalty_service_level=1_000_000.0,
+            allow_shortage=bool(request.allow_shortage),
+            shortage_penalty=float(request.shortage_penalty or 0.0),
+            service_level_target=request.service_level_target,
+            strict_service=bool(request.strict_service if request.strict_service is not None else True),
         )
 
 
 class ModelBuilderFactory:
-    """Factory to route to the correct model builder by mode."""
+    """Factory retained for compatibility; only elastic is supported."""
 
     _builders = {
-        "deterministic": DeterministicModelBuilder(),
-        "stochastic": StochasticModelBuilder(),
-        "robust": RobustModelBuilder(),
+        "elastic": ElasticModelBuilder(),
+        "deterministic": ElasticModelBuilder(),  # backwards-compatible alias
     }
 
     @classmethod

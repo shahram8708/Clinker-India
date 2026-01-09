@@ -71,6 +71,7 @@ from .forms import (
     CsvUploadForm,
 )
 from ..optimization.engine import OptimizationEngine, OptimizationRequest
+from ..optimization.exceptions import OptimizationError, ValidationError
 
 
 ops_bp = Blueprint("ops", __name__, url_prefix="/operations")
@@ -123,10 +124,14 @@ def _workspace_query(org_id: int):
     return Workspace.for_org(org_id).order_by(Workspace.created_at.desc())
 
 
-def _unique_scenario_name(org_id: int, base: str) -> str:
+def _unique_scenario_name(org_id: int, workspace_id: int, base: str) -> str:
     candidate = base
     suffix = 2
-    while PlanningScenario.for_org(org_id).filter_by(scenario_name=candidate).first():
+    while (
+        PlanningScenario.for_org(org_id)
+        .filter_by(workspace_id=workspace_id, scenario_name=candidate)
+        .first()
+    ):
         candidate = f"{base} ({suffix})"
         suffix += 1
     return candidate
@@ -161,13 +166,17 @@ def _bootstrap_default_workspace(org_id: int, user_id: int | None):
         description="Auto-created",
         created_by=user_id,
     )
+    db.session.add(workspace)
+    db.session.flush()
+
     scenario = PlanningScenario(
         organization_id=org_id,
-        scenario_name=_unique_scenario_name(org_id, "Default dataset"),
+        workspace_id=workspace.id,
+        scenario_name=_unique_scenario_name(org_id, workspace.id, "Default dataset"),
         periods=3,
         status="draft",
     )
-    db.session.add_all([workspace, scenario])
+    db.session.add(scenario)
     db.session.flush()
     dataset = WorkspaceDataset(
         organization_id=org_id,
@@ -195,9 +204,10 @@ def _resolve_workspace(org_id: int, workspace_id: int | None, user_id: int | Non
         # Ensure the workspace has at least one dataset and a linked scenario; create if missing.
         dataset = WorkspaceDataset.for_org(org_id).filter_by(workspace_id=workspace.id).first()
         if dataset is None:
-            scenario_name = _unique_scenario_name(org_id, f"{workspace.name} dataset")
+            scenario_name = _unique_scenario_name(org_id, workspace.id, f"{workspace.name} dataset")
             scenario = PlanningScenario(
                 organization_id=org_id,
+                workspace_id=workspace.id,
                 scenario_name=scenario_name,
                 periods=3,
                 status="draft",
@@ -224,24 +234,28 @@ def _resolve_workspace(org_id: int, workspace_id: int | None, user_id: int | Non
 def create_scenario():
     org_id = _org_id()
     form = ScenarioForm()
-    workspace = None
     workspace_ctx = request.form.get("workspace_id")
-    if workspace_ctx:
-        try:
-            workspace = _resolve_workspace(org_id, int(workspace_ctx), getattr(current_user, "id", None))
-        except ValueError:  # pragma: no cover - guard
-            abort(400)
+    try:
+        workspace_id = int(workspace_ctx) if workspace_ctx else None
+    except ValueError:  # pragma: no cover - guard
+        abort(400)
+
+    workspace = _resolve_workspace(org_id, workspace_id, getattr(current_user, "id", None))
 
     if form.validate_on_submit():
-        existing = PlanningScenario.for_org(org_id).filter_by(scenario_name=form.scenario_name.data.strip()).first()
+        existing = (
+            PlanningScenario.for_org(org_id)
+            .filter_by(workspace_id=workspace.id, scenario_name=form.scenario_name.data.strip())
+            .first()
+        )
         if existing:
             flash("A scenario with that name already exists.", "warning")
-            anchor = "optimization" if workspace else "scenarios"
-            return redirect(url_for("ops.network", workspace_id=workspace.id if workspace else None, _anchor=anchor))
+            return redirect(url_for("ops.network", workspace_id=workspace.id, _anchor="optimization"))
 
         desired_status = form.status.data
         scenario = PlanningScenario(
             organization_id=org_id,
+            workspace_id=workspace.id,
             scenario_name=form.scenario_name.data.strip(),
             periods=form.periods.data,
             status=desired_status,
@@ -281,8 +295,7 @@ def create_scenario():
     else:
         flash("Please review the scenario fields.", "danger")
 
-    anchor = "optimization" if workspace else "scenarios"
-    return redirect(url_for("ops.network", workspace_id=workspace.id if workspace else None, _anchor=anchor))
+    return redirect(url_for("ops.network", workspace_id=workspace.id, _anchor="optimization"))
 
 
 
@@ -302,9 +315,10 @@ def _resolve_dataset(workspace: Workspace, dataset_id: int | None, user_id: int 
 
     if dataset is None:
         # No dataset for this workspace; create a fresh one with a unique label.
-        scenario_name = _unique_scenario_name(workspace.organization_id, f"{workspace.name} dataset")
+        scenario_name = _unique_scenario_name(workspace.organization_id, workspace.id, f"{workspace.name} dataset")
         scenario = PlanningScenario(
             organization_id=workspace.organization_id,
+            workspace_id=workspace.id,
             scenario_name=scenario_name,
             periods=3,
             status="draft",
@@ -320,6 +334,30 @@ def _resolve_dataset(workspace: Workspace, dataset_id: int | None, user_id: int 
             created_by=user_id,
             is_active=True,
         )
+        db.session.add(dataset)
+        db.session.commit()
+    # Ensure the dataset's scenario is bound to the same workspace; mis-linked scenarios route data to the wrong workspace.
+    scenario = None
+    if dataset.planning_scenario_id:
+        scenario = (
+            PlanningScenario.for_org(workspace.organization_id)
+            .filter_by(id=dataset.planning_scenario_id)
+            .first()
+        )
+
+    if scenario is None or scenario.workspace_id != workspace.id:
+        base_name = scenario.scenario_name if scenario else f"{workspace.name} dataset"
+        periods = scenario.periods if scenario else 3
+        new_scenario = PlanningScenario(
+            organization_id=workspace.organization_id,
+            workspace_id=workspace.id,
+            scenario_name=_unique_scenario_name(workspace.organization_id, workspace.id, base_name),
+            periods=periods,
+            status="draft",
+        )
+        db.session.add(new_scenario)
+        db.session.flush()
+        dataset.planning_scenario_id = new_scenario.id
         db.session.add(dataset)
         db.session.commit()
 
@@ -361,6 +399,9 @@ def _plant_choices(org_id: int) -> list[tuple[int, str]]:
 
 def _scenario_choices(org_id: int, workspace_id: int | None = None, dataset_id: int | None = None) -> list[tuple[int, str]]:
     scenarios = PlanningScenario.for_org(org_id).order_by(PlanningScenario.created_at.desc())
+
+    if workspace_id is not None:
+        scenarios = scenarios.filter_by(workspace_id=workspace_id)
 
     # If a specific dataset is provided, lock selection to its scenario only.
     if dataset_id is not None:
@@ -522,13 +563,16 @@ def create_workspace():
             description=form.description.data.strip() if form.description.data else None,
             created_by=getattr(current_user, "id", None),
         )
+        db.session.add(workspace)
+        db.session.flush()
+
         scenario = PlanningScenario(
             organization_id=org_id,
-            scenario_name=_unique_scenario_name(org_id, f"{workspace.name} dataset"),
+            workspace_id=workspace.id,
+            scenario_name=_unique_scenario_name(org_id, workspace.id, f"{workspace.name} dataset"),
             periods=3,
             status="draft",
         )
-        db.session.add(workspace)
         db.session.add(scenario)
         db.session.flush()
         dataset = WorkspaceDataset(
@@ -733,12 +777,13 @@ def network(workspace_id: int | None, dataset_id: int | None):
     scenarios = (
         PlanningScenario.for_org(org_id)
         .filter(PlanningScenario.id == scenario_id)
+        .filter(PlanningScenario.workspace_id == workspace.id)
         .order_by(PlanningScenario.created_at.desc())
         .all()
     )
 
     recent_jobs = (
-        OptimizationJob.for_org(org_id)
+        OptimizationJob.for_workspace(org_id, workspace.id)
         .filter_by(scenario_id=scenario_id)
         .order_by(OptimizationJob.id.desc())
         .limit(5)
@@ -770,7 +815,7 @@ def network(workspace_id: int | None, dataset_id: int | None):
     )
 
     latest_result = (
-        OptimizationResult.for_org(org_id)
+        OptimizationResult.for_workspace(org_id, workspace.id)
         .filter_by(scenario_id=scenario_id)
         .order_by(OptimizationResult.created_at.desc())
         .first()
@@ -2128,6 +2173,11 @@ def update_inventory():
 def update_scenario_status(scenario_id: int):
     org_id = _org_id()
     scenario = get_tenant_record_or_404(PlanningScenario, scenario_id)
+
+    active_workspace_id = session.get("active_workspace_id")
+    if active_workspace_id is not None and getattr(scenario, "workspace_id", None) not in (None, active_workspace_id):
+        abort(403)
+
     desired = request.form.get("status")
     if desired not in {"draft", "executed", "completed"}:
         abort(400)
@@ -2154,7 +2204,7 @@ def update_scenario_status(scenario_id: int):
         details={"status": scenario.status},
     )
     flash("Scenario status updated.", "success")
-    return redirect(url_for("ops.network", _anchor="scenarios"))
+    return redirect(url_for("ops.network", workspace_id=scenario.workspace_id, _anchor="scenarios"))
 
 
 @ops_bp.route("/optimization/run", methods=["POST"])
@@ -2164,7 +2214,7 @@ def run_optimization():
     workspace, dataset = _dataset_context_from_request()
     org_id = workspace.organization_id
     form = OptimizationRunForm()
-    form.scenario_id.choices = _scenario_choices(org_id, workspace.id)
+    form.scenario_id.choices = _scenario_choices(org_id, workspace.id, dataset.id)
 
     if not form.validate_on_submit():
         flash("Please review the optimization inputs.", "danger")
@@ -2196,13 +2246,17 @@ def run_optimization():
     if not allow_shortage:
         shortage_penalty = 0.0
 
+    requested_mode = form.mode.data or "elastic"
+    db_mode = "deterministic" if requested_mode == "elastic" else requested_mode
+
     job = OptimizationJob(
         organization_id=org_id,
+        workspace_id=workspace.id,
         scenario_id=scenario.id,
-        mode=form.mode.data,
+        mode=db_mode,
         status="pending",
         request_payload={
-            "mode": form.mode.data,
+            "mode": requested_mode,
             "runtime_limit": form.runtime_limit.data,
             "demand_uplift_pct": float(form.demand_uplift_pct.data or 0),
             "scenario_samples": form.scenario_samples.data,
@@ -2223,7 +2277,8 @@ def run_optimization():
         request_model = OptimizationRequest(
             organization_id=org_id,
             scenario_id=scenario.id,
-            mode=form.mode.data,
+            workspace_id=workspace.id,
+            mode=requested_mode,
             runtime_limit=form.runtime_limit.data,
             demand_uplift_pct=float(form.demand_uplift_pct.data or 0),
             scenario_samples=form.scenario_samples.data,
@@ -2233,7 +2288,7 @@ def run_optimization():
         )
         response = engine.run(request_model, scenario)
         job.mark_completed(response.solver_status, runtime_seconds=response.runtime_seconds)
-        job.solver = "greedy"
+        job.solver = response.diagnostics.get("solver_used") or "cbc"
 
         solution = response.solution
 
@@ -2254,6 +2309,7 @@ def run_optimization():
 
         result = OptimizationResult(
             organization_id=org_id,
+            workspace_id=workspace.id,
             scenario_id=scenario.id,
             job_id=job.id,
             total_cost=solution.total_cost,

@@ -1,7 +1,6 @@
-"""Adapter layer to keep solvers pluggable."""
+"""Adapter layer for the elastic MILP solver."""
 from __future__ import annotations
 
-import math
 import time
 from dataclasses import dataclass, field
 from typing import Dict, Tuple
@@ -20,15 +19,20 @@ class SolverResult:
     shipment_plan: Dict[Tuple[int, int], float]
     production_plan: Dict[Tuple[int, int], float]
     inventory_plan: Dict[Tuple[int, int], float]
-    shortage_plan: Dict[Tuple[int, int], float] = field(default_factory=dict)
     trips_plan: Dict[Tuple[int, int], float] = field(default_factory=dict)
+    fulfillment_plan: Dict[Tuple[int, int], float] = field(default_factory=dict)
+    shortage_plan: Dict[Tuple[int, int], float] = field(default_factory=dict)
+    slack_min_fulfillment: Dict[Tuple[int, int], float] = field(default_factory=dict)
+    slack_min_stock: Dict[Tuple[int, int], float] = field(default_factory=dict)
+    slack_max_stock: Dict[Tuple[int, int], float] = field(default_factory=dict)
+    slack_service_level: float = 0.0
     cost_breakdown: dict = field(default_factory=dict)
     diagnostics: dict = field(default_factory=dict)
     runtime_seconds: float = 0.0
 
 
 class _DeterministicMilpSolver:
-    """Deterministic multi-period MILP implementing production, transport, inventory."""
+    """Elastic deterministic MILP with slack penalties."""
 
     def __init__(self) -> None:
         self._pulp = None
@@ -38,98 +42,32 @@ class _DeterministicMilpSolver:
             try:
                 import pulp  # type: ignore
             except ImportError as exc:  # pragma: no cover - import guard
-                raise SolverError("PuLP is required for deterministic MILP solving") from exc
+                raise SolverError("PuLP is required for elastic MILP solving") from exc
             self._pulp = pulp
         return self._pulp
-
-    def _feasibility_screen(self, dataset, allow_shortage: bool = False) -> tuple[bool, dict, str]:
-        def _safe_float(val: object, default: float = 0.0) -> float:
-            try:
-                return float(val)
-            except (TypeError, ValueError):
-                return default
-
-        plant_lookup = {p["id"]: p for p in dataset.plants}
-        iu_ids = [pid for pid, plant in plant_lookup.items() if plant.get("type") == "IU"]
-        gu_ids = [pid for pid, plant in plant_lookup.items() if plant.get("type") == "GU"]
-
-        # Use period-specific capacities when available
-        total_supply = 0.0
-        for pid in iu_ids:
-            if pid in getattr(dataset, "period_capacities", {}):
-                total_supply += sum(dataset.period_capacities.get(pid, []))
-            else:
-                total_supply += float(plant_lookup[pid].get("production_capacity", 0.0)) * dataset.periods
-
-        total_demand = sum(sum(periods) for periods in dataset.demand.values())
-        initial_inventory = sum(dataset.inventory.values())
-
-        routes_by_dest = {}
-        for route in dataset.routes:
-            routes_by_dest.setdefault(route["destination"], []).append(route)
-
-        blocking: list[str] = []
-        warnings: list[str] = []
-        if total_supply + initial_inventory < total_demand:
-            (warnings if allow_shortage else blocking).append("total_supply_below_demand")
-
-        for gu in gu_ids:
-            demand_stream = dataset.demand.get(gu, [])
-            if any(val > 0 for val in demand_stream) and not routes_by_dest.get(gu):
-                blocking.append(f"no_inbound_route_for_GU_{gu}")
-
-        for route in dataset.routes:
-            if _safe_float(route.get("min_batch_quantity")) > _safe_float(route.get("trip_capacity")):
-                blocking.append(f"route_{route['id']}_sbq_exceeds_capacity")
-
-        diagnostics = {
-            "total_supply_available": total_supply + initial_inventory,
-            "total_demand": total_demand,
-            "initial_inventory": initial_inventory,
-            "blocking_reasons": blocking,
-            "warnings": warnings,
-        }
-        return not blocking, diagnostics, "infeasible_precheck" if blocking else "ok_with_shortage" if warnings else "ok"
 
     def solve(self, model: ModelDefinition, time_limit: int | None = None) -> SolverResult:
         start = time.monotonic()
         dataset = model.dataset
         pulp = self._require_pulp()
 
-        ok, pre_diag, pre_status = self._feasibility_screen(dataset, allow_shortage=model.allow_shortage)
-        if not ok:
-            runtime = time.monotonic() - start
-            return SolverResult(
-                feasible=False,
-                status=pre_status,
-                objective_value=0.0,
-                shipment_plan={},
-                production_plan={},
-                inventory_plan={},
-                shortage_plan={},
-                trips_plan={},
-                cost_breakdown={"production_cost": 0.0, "transport_cost": 0.0, "holding_cost": 0.0, "total_cost": 0.0},
-                diagnostics={"precheck": pre_diag},
-                runtime_seconds=runtime,
-            )
-
         periods = range(1, dataset.periods + 1)
         plant_lookup = {p["id"]: p for p in dataset.plants}
         iu_ids = [pid for pid, plant in plant_lookup.items() if plant.get("type") == "IU"]
-        gu_ids = [pid for pid, plant in plant_lookup.items() if plant.get("type") == "GU"]
+        demand_nodes = list(plant_lookup.keys())
 
         demand = {pid: dataset.demand.get(pid, [0.0] * dataset.periods) for pid in plant_lookup}
+        min_ful = getattr(dataset, "min_fulfillment", {}) or {}
         inv0 = {pid: float(dataset.inventory.get(pid, 0.0)) for pid in plant_lookup}
 
-        # Per-plant minima/maxima for closing stocks (period-specific)
         min_close = getattr(dataset, "min_closing_stocks", {}) or {}
         max_close = getattr(dataset, "max_closing_stocks", {}) or {}
 
-        # Safety floor as a per-plant baseline; period overrides handled later
-        safety = {pid: float(dataset.safety_stock.get(pid, 0.0)) for pid in plant_lookup}
+        # Holding cost per plant (default 0 if not provided)
+        hold_cost: Dict[int, float] = {pid: float(plant_lookup[pid].get("holding_cost", 0.0) or 0.0) for pid in plant_lookup}
 
-        # Use period-specific capacities if available, otherwise fall back to static capacity
         prod_cap: Dict[int, list[float]] = {}
+        prod_cost: Dict[int, list[float]] = {}
         for pid in plant_lookup:
             if pid in dataset.period_capacities and len(dataset.period_capacities[pid]) == dataset.periods:
                 prod_cap[pid] = [float(v) for v in dataset.period_capacities[pid]]
@@ -137,152 +75,93 @@ class _DeterministicMilpSolver:
                 static_cap = float(plant_lookup[pid].get("production_capacity", 0.0))
                 prod_cap[pid] = [static_cap] * dataset.periods
 
-        # Production costs per period; default to large penalty if missing
-        prod_cost: Dict[int, list[float]] = {}
-        for pid in plant_lookup:
-            series = getattr(dataset, "period_specific_costs", {}).get(pid)
-            if series and len(series) == dataset.periods:
-                prod_cost[pid] = [float(v) if float(v) > 0 else 1_000_000.0 for v in series]
+            cost_series = getattr(dataset, "period_specific_costs", {}).get(pid)
+            if cost_series and len(cost_series) == dataset.periods:
+                prod_cost[pid] = [float(v) for v in cost_series]
             else:
-                scalar = float(plant_lookup[pid].get("production_cost", 0.0) or 1_000_000.0)
+                scalar = float(plant_lookup[pid].get("production_cost", 0.0) or 0.0)
                 prod_cost[pid] = [scalar] * dataset.periods
 
-        # Holding cost fixed to ₹5/ton-period unless a plant override exists
-        hold_cost: Dict[int, float] = {pid: float(plant_lookup[pid].get("holding_cost", 5.0) or 5.0) for pid in plant_lookup}
-
-        # Inventory caps default to infinity unless period max is provided
-        inv_cap: Dict[int, float] = {}
-        for pid in plant_lookup:
-            # Take the smallest finite max across periods if provided, else inf
-            caps = [cap for (p, _), cap in max_close.items() if p == pid and cap < float("inf")]
-            inv_cap[pid] = min(caps) if caps else float("inf")
-
-        prob = pulp.LpProblem("deterministic_supply_chain", pulp.LpMinimize)
-
-        X = {(pid, t): pulp.LpVariable(f"prod_{pid}_{t}", lowBound=0)
-             for pid in plant_lookup for t in periods}
-        Inv = {(pid, t): pulp.LpVariable(f"inv_{pid}_{t}", lowBound=0)
-               for pid in plant_lookup for t in periods}
-        Ship = {}
-        Trips = {}
-        Shortage = {}
-        if model.allow_shortage:
-            for pid in plant_lookup:
-                for t in periods:
-                    Shortage[(pid, t)] = pulp.LpVariable(f"shortage_{pid}_{t}", lowBound=0)
-
-        # Extract batch multipliers for each route
-        batch_multipliers = {}
-        for route in dataset.routes:
-            route_id = route["id"]
-            batch_multipliers[route_id] = dataset.batch_multipliers.get(route_id, 1.0)
-
-        for route in dataset.routes:
-            max_trips = route.get("max_trips_per_period") or None
-            for t in periods:
-                Trips[(route["id"], t)] = pulp.LpVariable(
-                    f"trips_{route['id']}_{t}",
-                    lowBound=0,
-                    upBound=max_trips,
-                    cat=pulp.LpInteger,
-                )
-                Ship[(route["id"], t)] = pulp.LpVariable(f"ship_{route['id']}_{t}", lowBound=0)
-
-        # Production capacity constraints with period-specific capacities
-        for i in iu_ids:
-            for t in periods:
-                period_cap = prod_cap[i][t - 1] if isinstance(prod_cap[i], list) else prod_cap[i]
-                prob += X[(i, t)] <= period_cap, f"prod_cap_{i}_{t}"
-
-        for g in gu_ids:
-            for t in periods:
-                prob += X[(g, t)] == 0, f"no_prod_at_GU_{g}_{t}"
-
-        iu_sources = set(iu_ids)
-
-        # Route constraints with batch multipliers: Ship = Trips × Multiplier
+        # Pre-compute normalized per-unit transport cost (freight + handling) / multiplier
+        normalized_transport: Dict[Tuple[int, int], float] = {}
+        trip_cost: Dict[Tuple[int, int], float] = {}
+        route_modes: Dict[int, str] = {}
         for route in dataset.routes:
             rid = route["id"]
-            capacity = float(route.get("trip_capacity", 0.0))
-            sbq = float(route.get("min_batch_quantity", 0.0))
-            source = route.get("source")
-            multiplier = batch_multipliers.get(rid, 1.0)
-            
-            for t in periods:
-                if source not in iu_sources:
-                    prob += Ship[(rid, t)] == 0, f"forbid_ship_non_iu_{rid}_{t}"
-                    prob += Trips[(rid, t)] == 0, f"forbid_trips_non_iu_{rid}_{t}"
-                    continue
-                
-                # Key change: Flow = Trips × Batch_Multiplier (not just capacity)
-                # Ship[(rid, t)] = Trips[(rid, t)] × multiplier
-                prob += Ship[(rid, t)] == multiplier * Trips[(rid, t)], f"ship_batch_{rid}_{t}"
-                
-                # Capacity constraint: ensure multiplier × trips doesn't exceed capacity
-                # (optional, depends on whether capacity is per-trip or aggregate)
-                # For now, assume multiplier respects trip capacity inherently
-                # If needed: prob += Ship[(rid, t)] <= capacity * Trips[(rid, t)], f"ship_cap_{rid}_{t}"
-                
-                # SBQ constraint adapted for multipliers: Ship ≥ SBQ when Trips > 0
-                # Using big-M method: Ship ≥ SBQ × (Trips / max_trips) or indicator constraints
-                # Simpler: if trips > 0, then ship >= sbq; enforced via: Ship >= sbq when Trips >= 1
-                if sbq > 0:
-                    # Enforce: if Trips >= 1, then Ship >= sbq
-                    # Approximate: Ship >= sbq × min(Trips, 1) ≈ Ship >= sbq when Trips > 0
-                    # Better: use indicator or reformulate as: multiplier × Trips >= sbq when Trips > 0
-                    # Simple linear: no explicit check, rely on multiplier × trips >= sbq naturally
-                    # For strict SBQ: prob += Ship[(rid, t)] >= sbq * Trips[(rid, t)] / (Trips[(rid, t)] + 1e-6), ...
-                    # Actually, with Ship = multiplier × Trips, SBQ is implicitly checked if multiplier ≥ sbq
-                    # More correct: enforce minimum shipment if trips > 0
-                    # Use auxiliary binary: z[(rid, t)] = 1 if Trips > 0, then Ship >= sbq × z
-                    # For simplicity without binary: assume multiplier is configured to respect SBQ
-                    pass
-                
-                max_trips = route.get("max_trips_per_period")
-                if max_trips:
-                    prob += Trips[(rid, t)] <= max_trips, f"trip_limit_{rid}_{t}"
+            route_modes[rid] = route.get("mode")
+            multiplier = max(float(dataset.batch_multipliers.get(rid, 1.0) or 1.0), 1e-6)
+            freight_series = dataset.freight_costs.get(rid, [0.0] * dataset.periods)
+            handling_series = dataset.handling_costs.get(rid, [0.0] * dataset.periods)
+            for idx, t in enumerate(periods):
+                freight = float(freight_series[idx]) if idx < len(freight_series) else 0.0
+                handling = float(handling_series[idx]) if idx < len(handling_series) else 0.0
+                trip_cost[(rid, t)] = freight + handling
+                normalized_transport[(rid, t)] = (freight + handling) / multiplier
 
-        total_demand_qty = sum(sum(vals) for vals in demand.values()) or 1.0
-        min_map = getattr(dataset, "min_fulfillment", {}) or {}
+        prob = pulp.LpProblem("elastic_supply_chain", pulp.LpMinimize)
 
+        Prod = {(pid, t): pulp.LpVariable(f"prod_{pid}_{t}", lowBound=0) for pid in plant_lookup for t in periods}
+        Ship = {(route["id"], t): pulp.LpVariable(f"ship_{route['id']}_{t}", lowBound=0) for route in dataset.routes for t in periods}
+        Trips = {(route["id"], t): pulp.LpVariable(f"trips_{route['id']}_{t}", lowBound=0, cat=pulp.LpInteger) for route in dataset.routes for t in periods}
+        Inv = {(pid, t): pulp.LpVariable(f"inv_{pid}_{t}", lowBound=0) for pid in plant_lookup for t in periods}
+        Fulfill = {(pid, t): pulp.LpVariable(f"fulfill_{pid}_{t}", lowBound=0) for pid in plant_lookup for t in periods}
+        Shortage = {(pid, t): pulp.LpVariable(f"short_{pid}_{t}", lowBound=0) for pid in plant_lookup for t in periods}
+
+        SlackFul = {(pid, t): pulp.LpVariable(f"s_ful_{pid}_{t}", lowBound=0) for pid in plant_lookup for t in periods}
+        SlackMinStk = {(pid, t): pulp.LpVariable(f"s_min_{pid}_{t}", lowBound=0) for pid in plant_lookup for t in periods}
+        SlackMaxStk = {(pid, t): pulp.LpVariable(f"s_max_{pid}_{t}", lowBound=0) for pid in plant_lookup for t in periods}
+
+        # Production bounds
         for pid in plant_lookup:
-            plant_type = plant_lookup[pid].get("type")
             for t in periods:
-                outbound = pulp.lpSum(Ship[(route["id"], t)] for route in dataset.routes if route["source"] == pid)
-                inbound = pulp.lpSum(Ship[(route["id"], t)] for route in dataset.routes if route["destination"] == pid)
-                demand_t = float(demand.get(pid, [0.0] * dataset.periods)[t - 1])
+                cap = prod_cap.get(pid, [0.0] * dataset.periods)[t - 1]
+                if pid in iu_ids:
+                    prob += Prod[(pid, t)] <= cap, f"cap_prod_{pid}_{t}"
+                else:
+                    prob += Prod[(pid, t)] == 0, f"no_prod_{pid}_{t}"
+
+        # Trip linkage and bounds per route/period
+        for route in dataset.routes:
+            rid = route["id"]
+            multiplier = max(float(dataset.batch_multipliers.get(rid, 1.0) or 1.0), 1e-6)
+            for t in periods:
+                prob += Ship[(rid, t)] == Trips[(rid, t)] * multiplier, f"ship_trip_link_{rid}_{t}"
+                max_trips = route.get("max_trips_per_period")
+                if max_trips is not None:
+                    prob += Trips[(rid, t)] <= float(max_trips), f"max_trips_{rid}_{t}"
+                min_batch = float(route.get("min_batch_quantity", 0.0) or 0.0)
+                if min_batch > 0:
+                    prob += Ship[(rid, t)] >= Trips[(rid, t)] * min_batch, f"min_batch_{rid}_{t}"
+
+        # Inventory balance with fulfillment draw
+        for pid in plant_lookup:
+            for t in periods:
+                inbound = pulp.lpSum(Ship[(r["id"], t)] for r in dataset.routes if r.get("destination") == pid)
+                outbound = pulp.lpSum(Ship[(r["id"], t)] for r in dataset.routes if r.get("source") == pid)
                 prev_inv = inv0[pid] if t == 1 else Inv[(pid, t - 1)]
 
-                pct_series = min_map.get(pid, [])
-                min_pct = pct_series[t - 1] if len(pct_series) >= t else 1.0
-                allowed_shortage = max(demand_t * (1 - min_pct), 0.0)
+                prob += Inv[(pid, t)] == prev_inv + Prod[(pid, t)] + inbound - outbound - Fulfill[(pid, t)], f"inv_bal_{pid}_{t}"
 
-                if plant_type == "IU":
-                    if model.allow_shortage:
-                        short_var = Shortage[(pid, t)]
-                        prob += Inv[(pid, t)] == prev_inv + inbound + X[(pid, t)] - outbound - demand_t + short_var, f"inv_bal_IU_{pid}_{t}"
-                        prob += short_var <= allowed_shortage, f"shortage_cap_{pid}_{t}"
-                    else:
-                        prob += Inv[(pid, t)] == prev_inv + inbound + X[(pid, t)] - outbound - demand_t, f"inv_bal_IU_{pid}_{t}"
-                else:
-                    if model.allow_shortage:
-                        short_var = Shortage[(pid, t)]
-                        prob += Inv[(pid, t)] == prev_inv + inbound - demand_t + short_var, f"inv_bal_GU_{pid}_{t}"
-                        prob += short_var <= allowed_shortage, f"shortage_cap_{pid}_{t}"
-                    else:
-                        prob += Inv[(pid, t)] == prev_inv + inbound - demand_t, f"inv_bal_GU_{pid}_{t}"
+        # Demand caps and min-fulfillment with slack
+        for pid in plant_lookup:
+            for t in periods:
+                dem = float(demand.get(pid, [0.0] * dataset.periods)[t - 1])
+                min_pct_series = min_ful.get(pid, [])
+                min_pct = min_pct_series[t - 1] if len(min_pct_series) >= t else 0.0
+                prob += Fulfill[(pid, t)] <= dem, f"fulfill_cap_{pid}_{t}"
+                prob += Fulfill[(pid, t)] + Shortage[(pid, t)] == dem, f"demand_balance_{pid}_{t}"
+                prob += Fulfill[(pid, t)] + SlackFul[(pid, t)] >= dem * min_pct, f"fulfill_min_{pid}_{t}"
 
-                # Apply per-period min/max closing stock (defaults to safety + unbounded upper)
-                min_floor = max(safety.get(pid, 0.0), min_close.get((pid, t), 0.0))
-                prob += Inv[(pid, t)] >= min_floor, f"min_close_{pid}_{t}"
+        # Inventory bounds with slack
+        for pid in plant_lookup:
+            for t in periods:
+                min_floor = float(min_close.get((pid, t), 0.0))
+                max_cap = float(max_close.get((pid, t), float("inf")))
+                prob += Inv[(pid, t)] + SlackMinStk[(pid, t)] >= min_floor, f"min_close_{pid}_{t}"
+                if max_cap < float("inf"):
+                    prob += Inv[(pid, t)] - SlackMaxStk[(pid, t)] <= max_cap, f"max_close_{pid}_{t}"
 
-                max_bound = max_close.get((pid, t))
-                if max_bound is None:
-                    max_bound = inv_cap.get(pid, float("inf"))
-                if max_bound < float("inf"):
-                    prob += Inv[(pid, t)] <= max_bound, f"max_close_{pid}_{t}"
-
-        # Flow constraints from IUGUConstraint sheet (per period, optional mode/to filters)
+        # Optional flow constraints (IUGUConstraint)
         if getattr(dataset, "flow_constraints", None):
             for fc in dataset.flow_constraints:
                 period = int(fc.get("period", 1))
@@ -311,65 +190,31 @@ class _DeterministicMilpSolver:
                 elif bound_type == "G":
                     prob += flow_expr <= value, f"flow_max_{src}_{dst or 'all'}_{mode or 'all'}_{period}"
 
-        # Build objective function with period-specific freight and handling costs (per trip)
-        transport_cost_terms = []
-        for route in dataset.routes:
-            rid = route["id"]
-            for t_idx, t in enumerate(periods):
-                freight_t = dataset.freight_costs.get(rid, [0.0] * dataset.periods)[t_idx]
-                handling_t = dataset.handling_costs.get(rid, [0.0] * dataset.periods)[t_idx]
-                trip_cost = freight_t + handling_t
-                transport_cost_terms.append(trip_cost * Trips[(rid, t)])
+        # Global service level constraint if provided
+        total_demand = sum(sum(demand.get(pid, [0.0] * dataset.periods)) for pid in demand_nodes)
+        SlackService = None
+        if model.service_level_target is not None and total_demand > 0:
+            prob += (
+                pulp.lpSum(Fulfill.values()) + (SlackService := pulp.LpVariable("s_service", lowBound=0))
+                >= float(model.service_level_target) * total_demand
+            ), "service_level_floor"
 
+        shortage_penalty_eff = model.shortage_penalty if model.allow_shortage else max(model.shortage_penalty, 1_000_000.0)
+        if model.strict_service:
+            shortage_penalty_eff = max(shortage_penalty_eff, 1_000_000.0)
+
+        # Objective: production + normalized transport + slack penalties
         objective = (
-            pulp.lpSum(prod_cost[i][t - 1] * X[(i, t)] for i in iu_ids for t in periods)
-            + pulp.lpSum(transport_cost_terms)
-            + pulp.lpSum(hold_cost[p] * Inv[(p, t)] for p in plant_lookup for t in periods)
-            + (
-                pulp.lpSum(model.shortage_penalty * Shortage[(pid, t)] for pid in plant_lookup for t in periods)
-                if model.allow_shortage
-                else 0
-            )
+            pulp.lpSum(prod_cost[i][t - 1] * Prod[(i, t)] for i in iu_ids for t in periods)
+            + pulp.lpSum(trip_cost[(rid, t)] * Trips[(rid, t)] for (rid, t) in trip_cost)
+            + pulp.lpSum(hold_cost[i] * Inv[(i, t)] for i in plant_lookup for t in periods)
+            + shortage_penalty_eff * pulp.lpSum(Shortage.values())
+            + model.penalty_min_fulfillment * pulp.lpSum(SlackFul.values())
+            + model.penalty_min_stock * pulp.lpSum(SlackMinStk.values())
+            + model.penalty_max_stock * pulp.lpSum(SlackMaxStk.values())
+            + (model.penalty_service_level * SlackService if SlackService is not None else 0)
         )
         prob += objective
-        
-        # Add IUGU constraints (min/max flow bounds between IU-GU pairs across all periods)
-        if dataset.iugu_constraints:
-            for constraint_key, (min_flow, max_flow) in dataset.iugu_constraints.items():
-                # Parse constraint key to extract source and destination IDs
-                # Expected format: "IU1_GU2" or "1_5" (plant IDs)
-                parts = str(constraint_key).split("_")
-                if len(parts) == 2:
-                    try:
-                        # Extract numeric IDs
-                        source_id = int(parts[0].replace("IU", "").replace("GU", ""))
-                        dest_id = int(parts[1].replace("IU", "").replace("GU", ""))
-                        
-                        # Find routes connecting this source-destination pair
-                        relevant_routes = [
-                            route for route in dataset.routes
-                            if route["source"] == source_id and route["destination"] == dest_id
-                        ]
-                        
-                        if relevant_routes:
-                            # Aggregate flow across all such routes and all periods
-                            total_flow = pulp.lpSum(
-                                Ship[(route["id"], t)]
-                                for route in relevant_routes
-                                for t in periods
-                            )
-                            if min_flow > 0:
-                                prob += total_flow >= min_flow, f"iugu_min_{constraint_key}"
-                            if max_flow < float("inf"):
-                                prob += total_flow <= max_flow, f"iugu_max_{constraint_key}"
-                    except (ValueError, KeyError):
-                        # Skip if we can't parse IDs
-                        pass
-
-        if model.allow_shortage and model.service_level_target is not None:
-            alpha = max(min(model.service_level_target, 1.0), 0.0)
-            max_shortage = (1 - alpha) * total_demand_qty
-            prob += pulp.lpSum(Shortage.values()) <= max_shortage, "chance_service_level"
 
         solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=time_limit) if time_limit else pulp.PULP_CBC_CMD(msg=False)
         prob.solve(solver)
@@ -379,16 +224,19 @@ class _DeterministicMilpSolver:
 
         production_plan: Dict[Tuple[int, int], float] = {}
         shipment_plan: Dict[Tuple[int, int], float] = {}
-        inventory_plan: Dict[Tuple[int, int], float] = {}
-        shortage_plan: Dict[Tuple[int, int], float] = {}
         trips_plan: Dict[Tuple[int, int], float] = {}
+        inventory_plan: Dict[Tuple[int, int], float] = {}
+        fulfillment_plan: Dict[Tuple[int, int], float] = {}
+        shortage_plan: Dict[Tuple[int, int], float] = {}
+        slack_ful: Dict[Tuple[int, int], float] = {}
+        slack_min: Dict[Tuple[int, int], float] = {}
+        slack_max: Dict[Tuple[int, int], float] = {}
+        slack_service = 0.0
 
-        production_cost_total = 0.0
-        transport_cost_total = 0.0
-        holding_cost_total = 0.0
+        production_cost_total = transport_cost_total = holding_cost_total = shortage_cost_total = penalty_ful = penalty_min = penalty_max = 0.0
 
         if feasible:
-            for key, var in X.items():
+            for key, var in Prod.items():
                 val = max(pulp.value(var), 0.0)
                 if val > 0:
                     production_plan[key] = val
@@ -404,38 +252,50 @@ class _DeterministicMilpSolver:
                 val = max(pulp.value(var), 0.0)
                 if val > 0:
                     inventory_plan[key] = val
-            if model.allow_shortage:
-                for key, var in Shortage.items():
-                    val = max(pulp.value(var), 0.0)
-                    if val > 0:
-                        shortage_plan[key] = val
+            for key, var in Fulfill.items():
+                val = max(pulp.value(var), 0.0)
+                if val > 0:
+                    fulfillment_plan[key] = val
+            for key, var in Shortage.items():
+                val = max(pulp.value(var), 0.0)
+                if val > 0:
+                    shortage_plan[key] = val
+            for key, var in SlackFul.items():
+                val = max(pulp.value(var), 0.0)
+                if val > 0:
+                    slack_ful[key] = val
+            for key, var in SlackMinStk.items():
+                val = max(pulp.value(var), 0.0)
+                if val > 0:
+                    slack_min[key] = val
+            for key, var in SlackMaxStk.items():
+                val = max(pulp.value(var), 0.0)
+                if val > 0:
+                    slack_max[key] = val
+            if SlackService is not None:
+                slack_service = max(pulp.value(SlackService), 0.0)
 
             production_cost_total = sum(prod_cost[i][t - 1] * production_plan.get((i, t), 0.0) for i in iu_ids for t in periods)
-
-            # Calculate transport cost using period-specific freight and handling costs (per trip)
-            transport_cost_total = 0.0
-            for route in dataset.routes:
-                rid = route["id"]
-                for t_idx, t in enumerate(periods):
-                    freight_t = dataset.freight_costs.get(rid, [0.0] * dataset.periods)[t_idx]
-                    handling_t = dataset.handling_costs.get(rid, [0.0] * dataset.periods)[t_idx]
-                    trips_val = max(pulp.value(Trips[(rid, t)]), 0.0)
-                    transport_cost_total += (freight_t + handling_t) * trips_val
-
-            holding_cost_total = sum(hold_cost[p] * inventory_plan.get((p, t), 0.0) for p in plant_lookup for t in periods)
-            shortage_cost_total = sum(model.shortage_penalty * shortage_plan.get((p, t), 0.0) for p in plant_lookup for t in periods) if model.allow_shortage else 0.0
+            transport_cost_total = sum(trip_cost.get((rid, t), 0.0) * trips_plan.get((rid, t), 0.0) for (rid, t) in trip_cost)
+            holding_cost_total = sum(hold_cost[i] * inventory_plan.get((i, t), 0.0) for i in plant_lookup for t in periods)
+            shortage_cost_total = shortage_penalty_eff * sum(shortage_plan.values())
+            penalty_ful = model.penalty_min_fulfillment * sum(slack_ful.values())
+            penalty_min = model.penalty_min_stock * sum(slack_min.values())
+            penalty_max = model.penalty_max_stock * sum(slack_max.values())
+            penalty_service = (model.penalty_service_level * slack_service) if SlackService is not None else 0.0
         else:
-            shortage_cost_total = 0.0
-
-        objective_value = production_cost_total + transport_cost_total + holding_cost_total + shortage_cost_total
+            penalty_service = 0.0
+        objective_value = production_cost_total + transport_cost_total + holding_cost_total + shortage_cost_total + penalty_ful + penalty_min + penalty_max
+        objective_value += penalty_service
         runtime = time.monotonic() - start
 
         diagnostics: dict[str, object] = {
             "status": status_label,
             "mip_gap": getattr(prob, "mipGap", None),
-            "precheck": pre_diag,
-            "shortage_total": sum(shortage_plan.values()) if shortage_plan else 0.0,
-            "service_level_target": model.service_level_target,
+            "slack_fulfillment_total": sum(slack_ful.values()),
+            "slack_min_stock_total": sum(slack_min.values()),
+            "slack_max_stock_total": sum(slack_max.values()),
+            "slack_service_level": slack_service,
         }
 
         return SolverResult(
@@ -445,462 +305,23 @@ class _DeterministicMilpSolver:
             shipment_plan=shipment_plan,
             production_plan=production_plan,
             inventory_plan=inventory_plan,
-            shortage_plan=shortage_plan,
             trips_plan=trips_plan,
+            fulfillment_plan=fulfillment_plan,
+            shortage_plan=shortage_plan,
+            slack_min_fulfillment=slack_ful,
+            slack_min_stock=slack_min,
+            slack_max_stock=slack_max,
+            slack_service_level=slack_service,
             cost_breakdown={
                 "production_cost": round(production_cost_total, 2),
                 "transport_cost": round(transport_cost_total, 2),
                 "holding_cost": round(holding_cost_total, 2),
                 "shortage_cost": round(shortage_cost_total, 2),
+                "penalty_min_fulfillment": round(penalty_ful, 2),
+                "penalty_min_stock": round(penalty_min, 2),
+                "penalty_max_stock": round(penalty_max, 2),
+                "penalty_service_level": round(penalty_service, 2),
                 "total_cost": round(objective_value, 2),
-            },
-            diagnostics=diagnostics,
-            runtime_seconds=runtime,
-        )
-
-    def solve_stochastic_extensive(self, model: ModelDefinition, scenarios: list, time_limit: int | None = None) -> SolverResult:
-        start = time.monotonic()
-        pulp = self._require_pulp()
-
-        if not scenarios:
-            return self.solve(model, time_limit=time_limit)
-
-        base = model.dataset
-        periods = range(1, base.periods + 1)
-        plant_lookup = {p["id"]: p for p in base.plants}
-        iu_ids = [pid for pid, plant in plant_lookup.items() if plant.get("type") == "IU"]
-        gu_ids = [pid for pid, plant in plant_lookup.items() if plant.get("type") == "GU"]
-
-        demand_per_scenario = []
-        inv0_per_scenario = []
-        for scenario_plan in scenarios:
-            ds = scenario_plan.dataset
-            demand_per_scenario.append({pid: ds.demand.get(pid, [0.0] * base.periods) for pid in plant_lookup})
-            inv0_per_scenario.append({pid: float(ds.inventory.get(pid, 0.0)) for pid in plant_lookup})
-
-        safety = {pid: float(base.safety_stock.get(pid, 0.0)) for pid in plant_lookup}
-        inv_cap = {pid: float(plant_lookup[pid].get("max_inventory_capacity", 0.0)) for pid in plant_lookup}
-        prod_cap = {pid: float(plant_lookup[pid].get("production_capacity", 0.0)) for pid in plant_lookup}
-        prod_cost = {pid: float(plant_lookup[pid].get("production_cost", 0.0)) for pid in plant_lookup}
-        hold_cost = {pid: float(plant_lookup[pid].get("holding_cost", 0.0)) for pid in plant_lookup}
-        min_map = getattr(base, "min_fulfillment", {}) or {}
-
-        route_cost_per_ton = {route["id"]: float(route.get("cost_per_ton", 0.0) or 0.0) for route in base.routes}
-
-        prob = pulp.LpProblem("stochastic_extensive_supply_chain", pulp.LpMinimize)
-
-        X = {(pid, t): pulp.LpVariable(f"prod_{pid}_{t}", lowBound=0) for pid in plant_lookup for t in periods}
-        Ship = {(route["id"], t): pulp.LpVariable(f"ship_{route['id']}_{t}", lowBound=0) for route in base.routes for t in periods}
-        Trips = {
-            (route["id"], t): pulp.LpVariable(
-                f"trips_{route['id']}_{t}",
-                lowBound=0,
-                upBound=route.get("max_trips_per_period") or None,
-                cat=pulp.LpInteger,
-            )
-            for route in base.routes
-            for t in periods
-        }
-
-        iu_sources = set(iu_ids)
-
-        Inv = {}
-        Shortage = {}
-        for s_idx, scenario_plan in enumerate(scenarios):
-            for pid in plant_lookup:
-                for t in periods:
-                    Inv[(s_idx, pid, t)] = pulp.LpVariable(f"inv_s{s_idx}_{pid}_{t}", lowBound=0)
-                    if model.allow_shortage:
-                        Shortage[(s_idx, pid, t)] = pulp.LpVariable(f"short_s{s_idx}_{pid}_{t}", lowBound=0)
-
-        for i in iu_ids:
-            for t in periods:
-                prob += X[(i, t)] <= prod_cap[i], f"prod_cap_{i}_{t}"
-
-        for g in gu_ids:
-            for t in periods:
-                prob += X[(g, t)] == 0, f"no_prod_at_GU_{g}_{t}"
-
-        for route in base.routes:
-            rid = route["id"]
-            capacity = float(route.get("trip_capacity", 0.0))
-            sbq = float(route.get("min_batch_quantity", 0.0))
-            source = route.get("source")
-            for t in periods:
-                if source not in iu_sources:
-                    prob += Ship[(rid, t)] == 0, f"forbid_ship_non_iu_{rid}_{t}"
-                    prob += Trips[(rid, t)] == 0, f"forbid_trips_non_iu_{rid}_{t}"
-                    continue
-                prob += Ship[(rid, t)] <= capacity * Trips[(rid, t)], f"ship_cap_{rid}_{t}"
-                if sbq > 0:
-                    prob += Ship[(rid, t)] >= sbq * Trips[(rid, t)], f"ship_sbq_{rid}_{t}"
-                max_trips = route.get("max_trips_per_period")
-                if max_trips:
-                    prob += Trips[(rid, t)] <= max_trips, f"trip_limit_{rid}_{t}"
-
-        scenario_costs = []
-        probabilities = [float(s.probability) for s in scenarios]
-        prob_total = sum(probabilities) or 1.0
-        norm_weights = [p / prob_total for p in probabilities]
-
-        for s_idx, scenario_plan in enumerate(scenarios):
-            demand = demand_per_scenario[s_idx]
-            inv0 = inv0_per_scenario[s_idx]
-            for pid in plant_lookup:
-                plant_type = plant_lookup[pid].get("type")
-                for t in periods:
-                    outbound = pulp.lpSum(Ship[(route["id"], t)] for route in base.routes if route["source"] == pid)
-                    inbound = pulp.lpSum(Ship[(route["id"], t)] for route in base.routes if route["destination"] == pid)
-                    demand_t = float(demand.get(pid, [0.0] * base.periods)[t - 1])
-                    prev_inv = inv0[pid] if t == 1 else Inv[(s_idx, pid, t - 1)]
-
-                    pct_series = min_map.get(pid, [])
-                    min_pct = pct_series[t - 1] if len(pct_series) >= t else 1.0
-                    allowed_shortage = max(demand_t * (1 - min_pct), 0.0)
-
-                    if plant_type == "IU":
-                        if model.allow_shortage:
-                            short_var = Shortage[(s_idx, pid, t)]
-                            prob += Inv[(s_idx, pid, t)] == prev_inv + inbound + X[(pid, t)] - outbound - demand_t + short_var, f"inv_bal_IU_s{s_idx}_{pid}_{t}"
-                            prob += short_var <= allowed_shortage, f"short_cap_s{s_idx}_{pid}_{t}"
-                        else:
-                            prob += Inv[(s_idx, pid, t)] == prev_inv + inbound + X[(pid, t)] - outbound - demand_t, f"inv_bal_IU_s{s_idx}_{pid}_{t}"
-                    else:
-                        if model.allow_shortage:
-                            short_var = Shortage[(s_idx, pid, t)]
-                            prob += Inv[(s_idx, pid, t)] == prev_inv + inbound - demand_t + short_var, f"inv_bal_GU_s{s_idx}_{pid}_{t}"
-                            prob += short_var <= allowed_shortage, f"short_cap_s{s_idx}_{pid}_{t}"
-                        else:
-                            prob += Inv[(s_idx, pid, t)] == prev_inv + inbound - demand_t, f"inv_bal_GU_s{s_idx}_{pid}_{t}"
-
-                    prob += Inv[(s_idx, pid, t)] >= safety.get(pid, 0.0), f"safety_s{s_idx}_{pid}_{t}"
-                    upper_cap = inv_cap.get(pid, 0.0)
-                    if upper_cap > 0 and math.isfinite(upper_cap):
-                        prob += Inv[(s_idx, pid, t)] <= upper_cap, f"cap_s{s_idx}_{pid}_{t}"
-
-            prod_cost_term = pulp.lpSum(prod_cost[i] * X[(i, t)] for i in iu_ids for t in periods)
-            transport_cost_term = pulp.lpSum(
-                float(route.get("cost_per_trip", 0.0)) * Trips[(route["id"], t)]
-                + route_cost_per_ton.get(route["id"], 0.0) * Ship[(route["id"], t)]
-                for route in base.routes
-                for t in periods
-            )
-            holding_cost_term = pulp.lpSum(hold_cost[p] * Inv[(s_idx, p, t)] for p in plant_lookup for t in periods)
-            shortage_term = (
-                pulp.lpSum(model.shortage_penalty * Shortage[(s_idx, pid, t)] for pid in plant_lookup for t in periods)
-                if model.allow_shortage
-                else 0
-            )
-            scenario_cost = prod_cost_term + transport_cost_term + holding_cost_term + shortage_term
-            scenario_costs.append(scenario_cost * norm_weights[s_idx])
-
-            if model.allow_shortage and model.service_level_target is not None:
-                total_demand_qty = sum(sum(vals) for vals in demand.values()) or 1.0
-                alpha = max(min(model.service_level_target, 1.0), 0.0)
-                max_shortage = (1 - alpha) * total_demand_qty
-                prob += pulp.lpSum(Shortage[(s_idx, p, t)] for p in plant_lookup for t in periods) <= max_shortage, f"chance_service_s{s_idx}"
-
-        prob += pulp.lpSum(scenario_costs)
-
-        solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=time_limit) if time_limit else pulp.PULP_CBC_CMD(msg=False)
-        prob.solve(solver)
-
-        status_label = pulp.LpStatus[prob.status]
-        feasible = prob.status not in {pulp.LpStatusInfeasible, pulp.LpStatusUnbounded}
-
-        production_plan: Dict[Tuple[int, int], float] = {}
-        shipment_plan: Dict[Tuple[int, int], float] = {}
-        inventory_plan: Dict[Tuple[int, int], float] = {}
-        shortage_plan: Dict[Tuple[int, int], float] = {}
-        trips_plan: Dict[Tuple[int, int], float] = {}
-
-        if feasible:
-            for key, var in X.items():
-                val = max(pulp.value(var), 0.0)
-                if val > 0:
-                    production_plan[key] = val
-            for key, var in Ship.items():
-                val = max(pulp.value(var), 0.0)
-                if val > 0:
-                    shipment_plan[key] = val
-            for key, var in Trips.items():
-                val = max(pulp.value(var), 0.0)
-                if val > 0:
-                    trips_plan[key] = val
-
-            for s_idx, scenario_plan in enumerate(scenarios):
-                weight = norm_weights[s_idx]
-                for pid in plant_lookup:
-                    for t in periods:
-                        inv_val = max(pulp.value(Inv[(s_idx, pid, t)]), 0.0)
-                        if inv_val > 0:
-                            inventory_plan[(pid, t)] = inventory_plan.get((pid, t), 0.0) + inv_val * weight
-                if model.allow_shortage:
-                    for pid in plant_lookup:
-                        for t in periods:
-                            var_key = (s_idx, pid, t)
-                            if var_key in Shortage:
-                                shortage_val = max(pulp.value(Shortage[var_key]), 0.0)
-                                if shortage_val > 0:
-                                    shortage_plan[(pid, t)] = shortage_plan.get((pid, t), 0.0) + shortage_val * weight
-
-        if feasible:
-            prod_cost_total = sum(prod_cost[i] * production_plan.get((i, t), 0.0) for i in iu_ids for t in periods)
-            transport_cost_total = sum(
-                float(route.get("cost_per_trip", 0.0)) * max(pulp.value(Trips[(route["id"], t)]), 0.0)
-                + route_cost_per_ton.get(route["id"], 0.0) * shipment_plan.get((route["id"], t), 0.0)
-                for route in base.routes
-                for t in periods
-            )
-            holding_cost_total = sum(hold_cost[p] * inventory_plan.get((p, t), 0.0) for p in plant_lookup for t in periods)
-            shortage_cost_total = sum(model.shortage_penalty * shortage_plan.get((p, t), 0.0) for p in plant_lookup for t in periods) if model.allow_shortage else 0.0
-        else:
-            prod_cost_total = transport_cost_total = holding_cost_total = shortage_cost_total = 0.0
-
-        expected_total_cost = prod_cost_total + transport_cost_total + holding_cost_total + shortage_cost_total
-        runtime = time.monotonic() - start
-
-        diagnostics: dict[str, object] = {
-            "status": status_label,
-            "scenario_count": len(scenarios),
-            "service_level_target": model.service_level_target,
-            "solver": "cbc",
-        }
-
-        return SolverResult(
-            feasible=feasible,
-            status=status_label.lower(),
-            objective_value=round(expected_total_cost, 2),
-            shipment_plan=shipment_plan,
-            production_plan=production_plan,
-            inventory_plan=inventory_plan,
-            shortage_plan=shortage_plan,
-            trips_plan=trips_plan,
-            cost_breakdown={
-                "production_cost": round(prod_cost_total, 2),
-                "transport_cost": round(transport_cost_total, 2),
-                "holding_cost": round(holding_cost_total, 2),
-                "shortage_cost": round(shortage_cost_total, 2),
-                "expected_total_cost": round(expected_total_cost, 2),
-                "total_cost": round(expected_total_cost, 2),
-            },
-            diagnostics=diagnostics,
-            runtime_seconds=runtime,
-        )
-
-    def solve_robust_minmax(self, model: ModelDefinition, scenarios: list, time_limit: int | None = None) -> SolverResult:
-        start = time.monotonic()
-        pulp = self._require_pulp()
-
-        if not scenarios:
-            return self.solve(model, time_limit=time_limit)
-
-        base = model.dataset
-        periods = range(1, base.periods + 1)
-        plant_lookup = {p["id"]: p for p in base.plants}
-        iu_ids = [pid for pid, plant in plant_lookup.items() if plant.get("type") == "IU"]
-        gu_ids = [pid for pid, plant in plant_lookup.items() if plant.get("type") == "GU"]
-
-        safety = {pid: float(base.safety_stock.get(pid, 0.0)) for pid in plant_lookup}
-        inv_cap = {pid: float(plant_lookup[pid].get("max_inventory_capacity", 0.0)) for pid in plant_lookup}
-        prod_cap = {pid: float(plant_lookup[pid].get("production_capacity", 0.0)) for pid in plant_lookup}
-        prod_cost = {pid: float(plant_lookup[pid].get("production_cost", 0.0)) for pid in plant_lookup}
-        hold_cost = {pid: float(plant_lookup[pid].get("holding_cost", 0.0)) for pid in plant_lookup}
-        route_cost_per_ton = {route["id"]: float(route.get("cost_per_ton", 0.0) or 0.0) for route in base.routes}
-        min_map = getattr(base, "min_fulfillment", {}) or {}
-
-        prob = pulp.LpProblem("robust_minmax_supply_chain", pulp.LpMinimize)
-
-        X = {(pid, t): pulp.LpVariable(f"prod_{pid}_{t}", lowBound=0) for pid in plant_lookup for t in periods}
-        Ship = {(route["id"], t): pulp.LpVariable(f"ship_{route['id']}_{t}", lowBound=0) for route in base.routes for t in periods}
-        Trips = {
-            (route["id"], t): pulp.LpVariable(
-                f"trips_{route['id']}_{t}",
-                lowBound=0,
-                upBound=route.get("max_trips_per_period") or None,
-                cat=pulp.LpInteger,
-            )
-            for route in base.routes
-            for t in periods
-        }
-
-        iu_sources = set(iu_ids)
-
-        Inv = {}
-        Shortage = {}
-        scenario_cost_exprs = []
-        for s_idx, scenario_plan in enumerate(scenarios):
-            ds = scenario_plan.dataset
-            demand = {pid: ds.demand.get(pid, [0.0] * base.periods) for pid in plant_lookup}
-            inv0 = {pid: float(ds.inventory.get(pid, 0.0)) for pid in plant_lookup}
-
-            for pid in plant_lookup:
-                for t in periods:
-                    Inv[(s_idx, pid, t)] = pulp.LpVariable(f"inv_s{s_idx}_{pid}_{t}", lowBound=0)
-                    if model.allow_shortage:
-                        Shortage[(s_idx, pid, t)] = pulp.LpVariable(f"short_s{s_idx}_{pid}_{t}", lowBound=0)
-
-            for pid in plant_lookup:
-                plant_type = plant_lookup[pid].get("type")
-                for t in periods:
-                    outbound = pulp.lpSum(Ship[(route["id"], t)] for route in base.routes if route["source"] == pid)
-                    inbound = pulp.lpSum(Ship[(route["id"], t)] for route in base.routes if route["destination"] == pid)
-                    demand_t = float(demand.get(pid, [0.0] * base.periods)[t - 1])
-                    prev_inv = inv0[pid] if t == 1 else Inv[(s_idx, pid, t - 1)]
-
-                    pct_series = min_map.get(pid, [])
-                    min_pct = pct_series[t - 1] if len(pct_series) >= t else 1.0
-                    allowed_shortage = max(demand_t * (1 - min_pct), 0.0)
-
-                    if plant_type == "IU":
-                        if model.allow_shortage:
-                            short_var = Shortage[(s_idx, pid, t)]
-                            prob += Inv[(s_idx, pid, t)] == prev_inv + inbound + X[(pid, t)] - outbound - demand_t + short_var, f"inv_bal_IU_s{s_idx}_{pid}_{t}"
-                            prob += short_var <= allowed_shortage, f"short_cap_s{s_idx}_{pid}_{t}"
-                        else:
-                            prob += Inv[(s_idx, pid, t)] == prev_inv + inbound + X[(pid, t)] - outbound - demand_t, f"inv_bal_IU_s{s_idx}_{pid}_{t}"
-                    else:
-                        if model.allow_shortage:
-                            short_var = Shortage[(s_idx, pid, t)]
-                            prob += Inv[(s_idx, pid, t)] == prev_inv + inbound - demand_t + short_var, f"inv_bal_GU_s{s_idx}_{pid}_{t}"
-                            prob += short_var <= allowed_shortage, f"short_cap_s{s_idx}_{pid}_{t}"
-                        else:
-                            prob += Inv[(s_idx, pid, t)] == prev_inv + inbound - demand_t, f"inv_bal_GU_s{s_idx}_{pid}_{t}"
-
-                    prob += Inv[(s_idx, pid, t)] >= safety.get(pid, 0.0), f"safety_s{s_idx}_{pid}_{t}"
-                    upper_cap = inv_cap.get(pid, 0.0)
-                    if upper_cap > 0 and math.isfinite(upper_cap):
-                        prob += Inv[(s_idx, pid, t)] <= upper_cap, f"cap_s{s_idx}_{pid}_{t}"
-
-            prod_cost_term = pulp.lpSum(prod_cost[i] * X[(i, t)] for i in iu_ids for t in periods)
-            transport_cost_term = pulp.lpSum(
-                float(route.get("cost_per_trip", 0.0)) * Trips[(route["id"], t)]
-                + route_cost_per_ton.get(route["id"], 0.0) * Ship[(route["id"], t)]
-                for route in base.routes
-                for t in periods
-            )
-            holding_cost_term = pulp.lpSum(hold_cost[p] * Inv[(s_idx, p, t)] for p in plant_lookup for t in periods)
-            shortage_term = (
-                pulp.lpSum(model.shortage_penalty * Shortage[(s_idx, pid, t)] for pid in plant_lookup for t in periods)
-                if model.allow_shortage
-                else 0
-            )
-            if model.allow_shortage and model.service_level_target is not None:
-                total_demand_qty = sum(sum(vals) for vals in demand.values()) or 1.0
-                alpha = max(min(model.service_level_target, 1.0), 0.0)
-                max_shortage = (1 - alpha) * total_demand_qty
-                prob += pulp.lpSum(Shortage[(s_idx, p, t)] for p in plant_lookup for t in periods) <= max_shortage, f"chance_service_s{s_idx}"
-            scenario_cost_exprs.append(prod_cost_term + transport_cost_term + holding_cost_term + shortage_term)
-
-        z = pulp.LpVariable("worst_case_cost", lowBound=0)
-        for s_idx, cost_expr in enumerate(scenario_cost_exprs):
-            prob += cost_expr <= z, f"worst_case_bound_{s_idx}"
-        prob += z
-
-        for i in iu_ids:
-            for t in periods:
-                prob += X[(i, t)] <= prod_cap[i], f"prod_cap_{i}_{t}"
-
-        for g in gu_ids:
-            for t in periods:
-                prob += X[(g, t)] == 0, f"no_prod_at_GU_{g}_{t}"
-
-        for route in base.routes:
-            rid = route["id"]
-            capacity = float(route.get("trip_capacity", 0.0))
-            sbq = float(route.get("min_batch_quantity", 0.0))
-            source = route.get("source")
-            for t in periods:
-                if source not in iu_sources:
-                    prob += Ship[(rid, t)] == 0, f"forbid_ship_non_iu_{rid}_{t}"
-                    prob += Trips[(rid, t)] == 0, f"forbid_trips_non_iu_{rid}_{t}"
-                    continue
-                prob += Ship[(rid, t)] <= capacity * Trips[(rid, t)], f"ship_cap_{rid}_{t}"
-                if sbq > 0:
-                    prob += Ship[(rid, t)] >= sbq * Trips[(rid, t)], f"ship_sbq_{rid}_{t}"
-                max_trips = route.get("max_trips_per_period")
-                if max_trips:
-                    prob += Trips[(rid, t)] <= max_trips, f"trip_limit_{rid}_{t}"
-
-        solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=time_limit) if time_limit else pulp.PULP_CBC_CMD(msg=False)
-        prob.solve(solver)
-
-        status_label = pulp.LpStatus[prob.status]
-        feasible = prob.status not in {pulp.LpStatusInfeasible, pulp.LpStatusUnbounded}
-
-        production_plan: Dict[Tuple[int, int], float] = {}
-        shipment_plan: Dict[Tuple[int, int], float] = {}
-        inventory_plan: Dict[Tuple[int, int], float] = {}
-        shortage_plan: Dict[Tuple[int, int], float] = {}
-        trips_plan: Dict[Tuple[int, int], float] = {}
-
-        if feasible:
-            for key, var in X.items():
-                val = max(pulp.value(var), 0.0)
-                if val > 0:
-                    production_plan[key] = val
-            for key, var in Ship.items():
-                val = max(pulp.value(var), 0.0)
-                if val > 0:
-                    shipment_plan[key] = val
-            for key, var in Trips.items():
-                val = max(pulp.value(var), 0.0)
-                if val > 0:
-                    trips_plan[key] = val
-            for s_idx, scenario_plan in enumerate(scenarios):
-                for pid in plant_lookup:
-                    for t in periods:
-                        inv_val = max(pulp.value(Inv[(s_idx, pid, t)]), 0.0)
-                        if inv_val > 0:
-                            inventory_plan[(pid, t)] = max(inventory_plan.get((pid, t), 0.0), inv_val)
-                if model.allow_shortage:
-                    for pid in plant_lookup:
-                        for t in periods:
-                            key = (s_idx, pid, t)
-                            if key in Shortage:
-                                shortage_val = max(pulp.value(Shortage[key]), 0.0)
-                                if shortage_val > 0:
-                                    shortage_plan[(pid, t)] = max(shortage_plan.get((pid, t), 0.0), shortage_val)
-
-        if feasible:
-            prod_cost_total = sum(prod_cost[i] * production_plan.get((i, t), 0.0) for i in iu_ids for t in periods)
-            transport_cost_total = sum(
-                float(route.get("cost_per_trip", 0.0)) * max(pulp.value(Trips[(route["id"], t)]), 0.0)
-                + route_cost_per_ton.get(route["id"], 0.0) * shipment_plan.get((route["id"], t), 0.0)
-                for route in base.routes
-                for t in periods
-            )
-            holding_cost_total = sum(hold_cost[p] * inventory_plan.get((p, t), 0.0) for p in plant_lookup for t in periods)
-            shortage_cost_total = sum(model.shortage_penalty * shortage_plan.get((p, t), 0.0) for p in plant_lookup for t in periods) if model.allow_shortage else 0.0
-            worst_case_cost = max(round(pulp.value(expr), 2) for expr in scenario_cost_exprs)
-        else:
-            prod_cost_total = transport_cost_total = holding_cost_total = shortage_cost_total = 0.0
-            worst_case_cost = 0.0
-        runtime = time.monotonic() - start
-
-        diagnostics: dict[str, object] = {
-            "status": status_label,
-            "scenario_count": len(scenarios),
-            "solver": "cbc",
-            "worst_case_cost": worst_case_cost,
-        }
-
-        return SolverResult(
-            feasible=feasible,
-            status=status_label.lower(),
-            objective_value=round(worst_case_cost, 2),
-            shipment_plan=shipment_plan,
-            production_plan=production_plan,
-            inventory_plan=inventory_plan,
-            shortage_plan=shortage_plan,
-            trips_plan=trips_plan,
-            cost_breakdown={
-                "production_cost": round(prod_cost_total, 2),
-                "transport_cost": round(transport_cost_total, 2),
-                "holding_cost": round(holding_cost_total, 2),
-                "shortage_cost": round(shortage_cost_total, 2),
-                "worst_case_cost": round(worst_case_cost, 2),
-                "total_cost": round(worst_case_cost, 2),
             },
             diagnostics=diagnostics,
             runtime_seconds=runtime,
@@ -917,105 +338,75 @@ class _GreedyCostSolver:
 
         plant_lookup = {p["id"]: p for p in dataset.plants}
         iu_ids = [pid for pid, p in plant_lookup.items() if p.get("type") == "IU"]
-        gu_ids = [pid for pid, p in plant_lookup.items() if p.get("type") == "GU"]
-        consumers = iu_ids + gu_ids
+        consumers = list(plant_lookup.keys())
 
         route_candidates = {}
         for route in dataset.routes:
             if route["destination"] in consumers and route["source"] in iu_ids:
-                trip_cap = max(float(route["trip_capacity"]), 1e-9)
-                unit_cost = (float(route["cost_per_trip"]) / trip_cap) if trip_cap else float("inf")
-                route_candidates.setdefault(route["destination"], []).append({**route, "unit_cost": unit_cost, "trip_capacity": trip_cap})
+                multiplier = float(dataset.batch_multipliers.get(route["id"], 1.0) or 1.0)
+                freight_series = dataset.freight_costs.get(route["id"], [0.0] * periods)
+                handling_series = dataset.handling_costs.get(route["id"], [0.0] * periods)
+                unit_costs = [
+                    (float(freight_series[idx]) + float(handling_series[idx])) / max(multiplier, 1e-6)
+                    for idx in range(periods)
+                ]
+                route_candidates.setdefault(route["destination"], []).append({**route, "unit_costs": unit_costs, "multiplier": multiplier})
 
         shipment_plan: Dict[tuple[int, int], float] = {}
         production_plan: Dict[tuple[int, int], float] = {}
         inventory_plan: Dict[tuple[int, int], float] = {}
-        shortage_plan: Dict[tuple[int, int], float] = {}
-        trips_plan: Dict[tuple[int, int], float] = {}
+        fulfillment_plan: Dict[tuple[int, int], float] = {}
 
-        feasible = True
         transport_cost_total = 0.0
-        shortage_total = 0.0
+        feasible = True
+
         inventory_levels = {pid: float(dataset.inventory.get(pid, 0.0)) for pid in plant_lookup}
-        safety_stock = {pid: float(dataset.safety_stock.get(pid, 0.0)) for pid in plant_lookup}
         total_demand_qty = sum(sum(dataset.demand.get(pid, [0.0] * periods)) for pid in plant_lookup)
 
         for period in range(1, periods + 1):
-            iu_supply = {}
+            # Produce at capacity for all IUs
             for iu in iu_ids:
-                prod_cap = float(plant_lookup[iu].get("production_capacity", 0.0))
-                produced = prod_cap
-                iu_supply[iu] = inventory_levels.get(iu, 0.0) + produced
+                produced = float(plant_lookup[iu].get("production_capacity", 0.0))
                 if produced > 0:
-                    production_plan[(iu, period)] = production_plan.get((iu, period), 0.0) + produced
+                    production_plan[(iu, period)] = produced
+                inventory_levels[iu] = inventory_levels.get(iu, 0.0) + produced
 
+            # Serve demand greedily
             for dest in consumers:
                 demand_qty = float(dataset.demand.get(dest, [0.0] * periods)[period - 1])
+                if demand_qty <= 0:
+                    inventory_plan[(dest, period)] = inventory_levels.get(dest, 0.0)
+                    continue
                 current_inv = inventory_levels.get(dest, 0.0)
-                need = max(demand_qty - current_inv, 0.0)
-                delivered = 0.0
+                remaining = max(demand_qty - current_inv, 0.0)
+                delivered = min(current_inv, demand_qty)
 
-                candidates = sorted(route_candidates.get(dest, []), key=lambda r: r["unit_cost"])
+                candidates = sorted(route_candidates.get(dest, []), key=lambda r: r["unit_costs"][period - 1])
                 for route in candidates:
-                    if need <= 0:
+                    if remaining <= 0:
                         break
                     source = route["source"]
-                    supply_avail = iu_supply.get(source, 0.0)
+                    supply_avail = inventory_levels.get(source, 0.0)
                     if supply_avail <= 0:
                         continue
-                    trip_cap = route["trip_capacity"]
-                    max_trips = route.get("max_trips_per_period") or math.inf
-                    deliverable = min(supply_avail, need, trip_cap * max_trips)
-                    if deliverable <= 0:
-                        continue
+                    send = min(supply_avail, remaining)
+                    inventory_levels[source] -= send
+                    delivered += send
+                    remaining -= send
+                    shipment_plan[(route["id"], period)] = shipment_plan.get((route["id"], period), 0.0) + send
+                    transport_cost_total += send * route["unit_costs"][period - 1]
 
-                    trips_used = math.ceil(deliverable / trip_cap)
-                    qty = min(deliverable, trips_used * trip_cap)
-                    iu_supply[source] -= qty
-                    delivered += qty
-                    need = max(need - qty, 0.0)
-
-                    shipment_plan[(route["id"], period)] = shipment_plan.get((route["id"], period), 0.0) + qty
-                    if trips_used > 0:
-                        trips_plan[(route["id"], period)] = trips_plan.get((route["id"], period), 0.0) + trips_used
-                    transport_cost_total += trips_used * float(route["cost_per_trip"]) + qty * float(route.get("cost_per_ton", 0.0))
-
-                end_inv = current_inv + delivered - demand_qty
-                if need > 1e-6:
-                    if model.allow_shortage:
-                        shortage_plan[(dest, period)] = shortage_plan.get((dest, period), 0.0) + need
-                        shortage_total += need
-                        end_inv = max(end_inv, 0.0)
-                    else:
-                        feasible = False
-                inventory_levels[dest] = max(end_inv, 0.0)
+                fulfilled = min(delivered, demand_qty)
+                fulfillment_plan[(dest, period)] = fulfilled
+                inventory_levels[dest] = max(current_inv + delivered - demand_qty, 0.0)
                 inventory_plan[(dest, period)] = inventory_levels[dest]
 
-            for iu in iu_ids:
-                inventory_levels[iu] = max(iu_supply.get(iu, 0.0), 0.0)
-                inventory_plan[(iu, period)] = inventory_levels[iu]
-                if inventory_levels[iu] + 1e-6 < safety_stock.get(iu, 0.0):
-                    feasible = feasible and model.allow_shortage
-
-        runtime = time.monotonic() - start
         prod_cost_total = sum(float(plant_lookup[i].get("production_cost", 0.0)) * qty for (i, _), qty in production_plan.items())
-        hold_cost_total = sum(float(plant_lookup[p].get("holding_cost", 0.0)) * qty for (p, _), qty in inventory_plan.items())
-        shortage_cost_total = model.shortage_penalty * shortage_total if model.allow_shortage else 0.0
-        total_cost = prod_cost_total + transport_cost_total + hold_cost_total + shortage_cost_total
+        total_cost = prod_cost_total + transport_cost_total
+        runtime = time.monotonic() - start
 
-        if model.allow_shortage and model.service_level_target is not None:
-            alpha = max(min(model.service_level_target, 1.0), 0.0)
-            if total_demand_qty:
-                if shortage_total > (1 - alpha) * total_demand_qty:
-                    feasible = False
+        diagnostics = {"solver_used": "greedy_fallback", "shortage_total": max(total_demand_qty - sum(fulfillment_plan.values()), 0.0)}
 
-        diagnostics = {
-            "mode": model.mode,
-            "uncertainty": model.uncertainty,
-            "scenario_weights": model.scenario_weights,
-            "shortage_total": shortage_total,
-            "service_level_target": model.service_level_target,
-        }
         return SolverResult(
             feasible=feasible,
             status="optimal" if feasible else "infeasible",
@@ -1023,13 +414,15 @@ class _GreedyCostSolver:
             shipment_plan=shipment_plan,
             production_plan=production_plan,
             inventory_plan=inventory_plan,
-            shortage_plan=shortage_plan,
-            trips_plan=trips_plan,
+            trips_plan={},
+            fulfillment_plan=fulfillment_plan,
+            shortage_plan={},
+            slack_min_fulfillment={},
+            slack_min_stock={},
+            slack_max_stock={},
             cost_breakdown={
                 "production_cost": round(prod_cost_total, 2),
                 "transport_cost": round(transport_cost_total, 2),
-                "holding_cost": round(hold_cost_total, 2),
-                "shortage_cost": round(shortage_cost_total, 2) if model.allow_shortage else 0.0,
                 "total_cost": round(total_cost, 2),
             },
             diagnostics=diagnostics,
@@ -1041,7 +434,7 @@ class SolverAdapter:
     """Facade choosing the appropriate solver backend."""
 
     def __init__(self, preferred: str | None = None):
-        self.preferred = preferred or "greedy"
+        self.preferred = preferred or "elastic"
         self._milp = _DeterministicMilpSolver()
         self._fallback = _GreedyCostSolver()
 
@@ -1052,12 +445,7 @@ class SolverAdapter:
         time_limit: int | None = None,
         mode_override: str | None = None,
     ) -> SolverResult:
-        mode = mode_override or model.mode
         try:
-            if mode == "stochastic" and getattr(model, "stochastic_formulation", "extensive") == "extensive":
-                return self._milp.solve_stochastic_extensive(model, scenarios or [], time_limit=time_limit)
-            if mode == "robust" and (model.metadata.get("robust_formulation") == "minmax" if hasattr(model, "metadata") else False):
-                return self._milp.solve_robust_minmax(model, scenarios or [], time_limit=time_limit)
             solved = self._milp.solve(model, time_limit=time_limit)
             solved.diagnostics["solver_used"] = "cbc"
             return solved

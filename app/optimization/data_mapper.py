@@ -16,6 +16,7 @@ from ..models import (
     PlanningScenario,
     ProductionCost,
 )
+from .exceptions import ValidationError
 
 
 @dataclass
@@ -65,19 +66,22 @@ class DataMapper:
     def __init__(self, session):
         self.session = session
 
-    def load_dataset(self, organization_id: int, scenario: PlanningScenario) -> CanonicalDataset:
+    def load_dataset(self, organization_id: int, scenario: PlanningScenario, workspace_id: int | None = None) -> CanonicalDataset:
         periods = max(int(getattr(scenario, "periods", 1) or 1), 1)
 
+        if workspace_id is not None:
+            scenario_workspace_id = getattr(scenario, "workspace_id", None)
+            if scenario_workspace_id is not None and scenario_workspace_id != workspace_id:
+                raise ValidationError("Scenario does not belong to the active workspace")
+
         def _get_rows(model, order_by=None):
-            """Fetch scenario-scoped rows; fall back to baseline rows when missing."""
+            """Fetch rows scoped strictly to the active scenario."""
             def _ordered(query):
                 return query.order_by(*order_by) if order_by else query
 
             scoped = model.for_org(organization_id)
             rows = _ordered(scoped.filter_by(planning_scenario_id=scenario.id)).all()
-            if rows:
-                return rows
-            return _ordered(scoped.filter_by(planning_scenario_id=None)).all()
+            return rows
 
         plants = _get_rows(IUGUType, order_by=[IUGUType.code])
 
@@ -146,7 +150,8 @@ class DataMapper:
 
         # Demand and min fulfillment per plant per period
         demand: Dict[int, List[float]] = {pid: _zeros(periods) for pid in code_to_id.values()}
-        min_fulfillment: Dict[int, List[float]] = {pid: [1.0] * periods for pid in code_to_id.values()}
+        # Default blank min-fulfillment to 0% (soft constraint per plan)
+        min_fulfillment: Dict[int, List[float]] = {pid: [0.0] * periods for pid in code_to_id.values()}
         for row in demand_rows:
             pid = code_to_id.get(row.plant_code)
             if pid is None:

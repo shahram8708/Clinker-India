@@ -33,6 +33,15 @@ class TenantOwnedMixin:
     def for_org(cls, organization_id: int):
         return cls.query.filter_by(organization_id=organization_id)
 
+    @classmethod
+    def for_workspace(cls, organization_id: int, workspace_id: int):
+        """Return a workspace-scoped query when the model exposes workspace_id."""
+
+        query = cls.for_org(organization_id)
+        if hasattr(cls, "workspace_id"):
+            return query.filter_by(workspace_id=workspace_id)
+        return query
+
     @validates("organization_id")
     def _lock_org(self, key, organization_id):  # noqa: WPS442 - required signature
         if getattr(self, key, None) not in (None, organization_id):
@@ -1066,6 +1075,12 @@ class PlanningScenario(TenantOwnedMixin, db.Model):
     __tablename__ = "planning_scenarios"
 
     id = db.Column(db.Integer, primary_key=True)
+    workspace_id = db.Column(
+        db.Integer,
+        db.ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     scenario_name = db.Column(db.String(255), nullable=False)
     periods = db.Column(db.Integer, nullable=False, default=1)
     status = db.Column(db.String(20), default="draft", nullable=False)
@@ -1074,7 +1089,12 @@ class PlanningScenario(TenantOwnedMixin, db.Model):
     summary = db.Column(db.JSON, default=dict)
 
     __table_args__ = (
-        UniqueConstraint("organization_id", "scenario_name", name="uq_scenario_name_per_org"),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "scenario_name",
+            name="uq_scenario_name_per_workspace",
+        ),
         CheckConstraint(status.in_(["draft", "executed", "completed"]), name="ck_scenario_status"),
         CheckConstraint(periods > 0, name="ck_periods_positive"),
     )
@@ -1117,6 +1137,12 @@ class OptimizationJob(TenantOwnedMixin, db.Model):
     __tablename__ = "optimization_jobs"
 
     id = db.Column(db.Integer, primary_key=True)
+    workspace_id = db.Column(
+        db.Integer,
+        db.ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     scenario_id = db.Column(db.Integer, db.ForeignKey("planning_scenarios.id", ondelete="CASCADE"), nullable=False)
     mode = db.Column(db.String(20), nullable=False, default="deterministic")
     status = db.Column(db.String(20), nullable=False, default="pending")
@@ -1132,7 +1158,7 @@ class OptimizationJob(TenantOwnedMixin, db.Model):
 
     __table_args__ = (
         CheckConstraint(status.in_(["pending", "running", "completed", "failed"]), name="ck_opt_job_status"),
-        CheckConstraint(mode.in_(["deterministic", "stochastic", "robust"]), name="ck_opt_job_mode"),
+        CheckConstraint(mode.in_(["elastic", "deterministic", "stochastic", "robust"]), name="ck_opt_job_mode"),
     )
 
     def mark_running(self) -> None:
@@ -1159,6 +1185,12 @@ class OptimizationResult(TenantOwnedMixin, db.Model):
     __tablename__ = "optimization_results"
 
     id = db.Column(db.Integer, primary_key=True)
+    workspace_id = db.Column(
+        db.Integer,
+        db.ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     job_id = db.Column(db.Integer, db.ForeignKey("optimization_jobs.id", ondelete="CASCADE"), nullable=False, unique=True)
     scenario_id = db.Column(db.Integer, db.ForeignKey("planning_scenarios.id", ondelete="CASCADE"), nullable=False)
     total_cost = db.Column(db.Numeric(14, 2))

@@ -535,17 +535,18 @@
         <span class="chip chip-soft">Scenario-linked</span>
       </div>
       <div class="row g-3 align-items-end">
-        <div class="col-12 col-lg-6">
+        <div class="col-12">
           <form method="POST" action="{{ url_for('ops.create_scenario') }}" class="row g-2 align-items-end">
             {{ scenario_form.csrf_token }}
             {{ scenario_form.workspace_id(value=workspace.id) }}
             <div class="col-6">{{ scenario_form.scenario_name.label(class_='form-label small') }}{{ scenario_form.scenario_name(class_='form-control', placeholder='Scenario name') }}</div>
-            <div class="col-3">{{ scenario_form.periods.label(class_='form-label small') }}{{ scenario_form.periods(class_='form-control') }}</div>
-            <div class="col-3">{{ scenario_form.status.label(class_='form-label small') }}{{ scenario_form.status(class_='form-select') }}</div>
-            <div class="col-12 text-end">{{ scenario_form.submit(class_='btn btn-ghost btn-sm') }}</div>
+            <div class="col-6">{{ scenario_form.periods.label(class_='form-label small') }}{{ scenario_form.periods(class_='form-control') }}</div>
+            <div class="col-6">{{ scenario_form.status.label(class_='form-label small') }}{{ scenario_form.status(class_='form-select') }}</div>
+            <div class="col-6">{{ scenario_form.submit(class_='btn btn-ghost btn-sm') }}</div>
           </form>
         </div>
-        <div class="col-12 col-lg-6">
+        <hr>
+        <div class="col-12">
           <form method="POST" action="{{ url_for('ops.run_optimization') }}" class="row g-2 align-items-end">
             {{ optimization_form.csrf_token }}
             <input type="hidden" name="workspace_id" value="{{ workspace.id }}">
@@ -553,7 +554,14 @@
             <div class="col-4">{{ optimization_form.scenario_id.label(class_='form-label small') }}{{ optimization_form.scenario_id(class_='form-select') }}</div>
             <div class="col-3">{{ optimization_form.mode.label(class_='form-label small') }}{{ optimization_form.mode(class_='form-select') }}</div>
             <div class="col-3">{{ optimization_form.runtime_limit.label(class_='form-label small') }}{{ optimization_form.runtime_limit(class_='form-control', placeholder='secs') }}</div>
-            <div class="col-2 d-flex align-items-end">{{ optimization_form.submit(class_='btn btn-primary w-100') }}</div>
+            <div class="col-2">{{ optimization_form.mark_completed(class_='form-check-input me-1') }}<label class="form-check-label small" for="{{ optimization_form.mark_completed.id }}">Mark done</label></div>
+            <div class="col-3">{{ optimization_form.demand_uplift_pct.label(class_='form-label small') }}{{ optimization_form.demand_uplift_pct(class_='form-control', placeholder='0.0') }}</div>
+            <div class="col-3">{{ optimization_form.service_level_target.label(class_='form-label small') }}{{ optimization_form.service_level_target(class_='form-control', placeholder='0.95') }}</div>
+            <div class="col-3">{{ optimization_form.shortage_penalty.label(class_='form-label small') }}{{ optimization_form.shortage_penalty(class_='form-control', placeholder='penalty/ton') }}</div>
+            <div class="col-3">{{ optimization_form.scenario_samples.label(class_='form-label small') }}{{ optimization_form.scenario_samples(class_='form-control', placeholder='samples') }}</div>
+            <div class="col-3 d-flex align-items-center gap-2">{{ optimization_form.allow_shortage_penalties(class_='form-check-input') }}<label class="form-check-label small" for="{{ optimization_form.allow_shortage_penalties.id }}">Allow shortage</label></div>
+            <div class="col-3 d-flex align-items-center gap-2">{{ optimization_form.strict_service(class_='form-check-input') }}<label class="form-check-label small" for="{{ optimization_form.strict_service.id }}">Strict service</label></div>
+            <div class="col-3 d-flex align-items-end">{{ optimization_form.submit(class_='btn btn-primary w-100') }}</div>
           </form>
         </div>
       </div>
@@ -614,6 +622,20 @@
         {% if latest_result and latest_result.kpis.get('ui_views') %}
           {% set ui = latest_result.kpis.get('ui_views') %}
           {% set summary = ui.get('summary', {}) %}
+          {% set kpi_all = latest_result.kpis or {} %}
+          {% set opt_chart_data = {
+            'costs': summary.get('costs', {}),
+            'objective': summary.get('objective', latest_result.total_cost),
+            'service_level_pct': summary.get('service_level_pct'),
+            'runtime_seconds': summary.get('runtime_seconds', 0),
+            'unmet_demand_total': summary.get('unmet_demand_total'),
+            'production': ui.get('production', []),
+            'dispatch': ui.get('dispatch', []),
+            'inventory': ui.get('inventory', []),
+            'transport_cost_by_mode': kpi_all.get('transport_cost_by_mode', {}),
+            'route_utilization_avg_pct': summary.get('route_utilization_avg_pct', 0),
+            'production_utilization_avg_pct': summary.get('production_utilization_avg_pct', 0)
+          } %}
           <div class="alert alert-soft d-flex flex-wrap align-items-center justify-content-between gap-3">
             <div class="d-flex align-items-center gap-2">
               <span class="badge bg-primary rounded-pill">Latest result</span>
@@ -628,7 +650,60 @@
             </div>
           </div>
 
-          <ul class="nav nav-pills mb-3" id="optTabs" role="tablist">
+          <div class="card shadow-soft card-tilt optimization-graphs">
+            <div class="card-body">
+              <div class="d-flex flex-wrap align-items-start justify-content-between gap-3">
+                <div>
+                  <p class="text-uppercase text-secondary small mb-1">Graphical analysis</p>
+                  <h3 class="h6 mb-0">Optimized run at a glance</h3>
+                </div>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                  <span class="chip chip-soft">Visuals only</span>
+                  <span class="chip chip-info">Charts update per latest run</span>
+                </div>
+              </div>
+              <div id="optimizationCharts" data-chart='{{ opt_chart_data | tojson }}'></div>
+              <div class="row g-3 mt-3">
+                <div class="col-12 col-lg-4 col-md-6">
+                  <div class="chart-card">
+                    <div class="chart-card__title">Cost composition</div>
+                    <div class="chart-card__subtitle">Production, transport, holding, shortage</div>
+                    <canvas id="chartCostBreakdown" height="220"></canvas>
+                  </div>
+                </div>
+                <div class="col-12 col-lg-4 col-md-6">
+                  <div class="chart-card">
+                    <div class="chart-card__title">Production vs capacity</div>
+                    <div class="chart-card__subtitle">By IU/GU</div>
+                    <canvas id="chartProdCapacity" height="220"></canvas>
+                  </div>
+                </div>
+                <div class="col-12 col-lg-4 col-md-6">
+                  <div class="chart-card">
+                    <div class="chart-card__title">Top routes by volume</div>
+                    <div class="chart-card__subtitle">Trips × quantity</div>
+                    <canvas id="chartRouteVolume" height="220"></canvas>
+                  </div>
+                </div>
+                <div class="col-12 col-lg-6 col-md-6">
+                  <div class="chart-card">
+                    <div class="chart-card__title">Inventory closing trend</div>
+                    <div class="chart-card__subtitle">Total closing stock by period</div>
+                    <canvas id="chartInventoryTrend" height="240"></canvas>
+                  </div>
+                </div>
+                <div class="col-12 col-lg-6 col-md-6">
+                  <div class="chart-card">
+                    <div class="chart-card__title">Service & mode mix</div>
+                    <div class="chart-card__subtitle">Service by period with transport mode share</div>
+                    <canvas id="chartServicePeriod" height="240"></canvas>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <ul class="nav nav-pills mb-3 mt-5" id="optTabs" role="tablist">
             <li class="nav-item" role="presentation">
               <button class="nav-link active" id="opt-summary-tab" data-bs-toggle="tab" data-bs-target="#opt-summary" type="button" role="tab">Summary</button>
             </li>
@@ -679,13 +754,58 @@
                   </div>
                 </div>
               </div>
+              <div class="row g-3 mt-1">
+                <div class="col-6 col-lg-3">
+                  <div class="card card-compact h-100">
+                    <div class="card-body">
+                      <p class="text-uppercase text-secondary small mb-1">Service level</p>
+                      <h4 class="h6 mb-0">{{ summary.get('service_level_pct') or 0 }}%</h4>
+                      <div class="text-secondary xsmall">Unmet demand: {{ (summary.get('unmet_demand_total') or 0)|round(2) }}</div>
+                      <div class="text-secondary xsmall">Shortage cost: ₹{{ summary.get('costs', {}).get('shortage', 0)|round(2) }}</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-6 col-lg-3">
+                  <div class="card card-compact h-100">
+                    <div class="card-body">
+                      <p class="text-uppercase text-secondary small mb-1">Utilization</p>
+                      <h4 class="h6 mb-0">Prod {{ summary.get('production_utilization_pct', 0)|round(2) }}% · Route {{ summary.get('route_utilization_avg_pct', 0)|round(2) }}%</h4>
+                      <div class="text-secondary xsmall">Avg IU util: {{ latest_result.kpis.get('production_utilization_avg_pct', 0)|round(2) }}%</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-6 col-lg-3">
+                  <div class="card card-compact h-100">
+                    <div class="card-body">
+                      <p class="text-uppercase text-secondary small mb-1">Transport by mode</p>
+                      <ul class="list-unstyled mb-0 xsmall text-secondary">
+                        {% for mode, cost in latest_result.kpis.get('transport_cost_by_mode', {}).items() %}
+                          <li>{{ mode }} · ₹{{ cost|round(2) }}</li>
+                        {% else %}
+                          <li>No mode-level costs.</li>
+                        {% endfor %}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-6 col-lg-3">
+                  <div class="card card-compact h-100">
+                    <div class="card-body">
+                      <p class="text-uppercase text-secondary small mb-1">Feasibility</p>
+                      <h4 class="h6 mb-0">{{ 'Feasible' if summary.get('feasible') else 'Infeasible' }}</h4>
+                      <div class="text-secondary xsmall">Safety OK: {{ 'Yes' if latest_result.kpis.get('safety_stock_ok') else 'No' }}</div>
+                      <div class="text-secondary xsmall">Constraints OK: {{ 'Yes' if latest_result.kpis.get('constraints_ok') else 'No' }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div class="tab-pane fade" id="opt-dispatch" role="tabpanel">
               <div class="table-responsive">
                 <table class="table table-premium align-middle mb-0">
                   <thead class="table-dark">
-                    <tr><th>Period</th><th>From</th><th>To</th><th>Mode</th><th>Trips</th><th>Qty</th><th>Trip cost</th><th>Route cost</th></tr>
+                    <tr><th>Period</th><th>From</th><th>To</th><th>Mode</th><th>Trips</th><th>Qty</th><th>Trip cap</th><th>SBQ</th><th>Trip cost</th><th>Route cost</th></tr>
                   </thead>
                   <tbody>
                     {% for row in ui.get('dispatch', []) %}
@@ -696,11 +816,13 @@
                         <td>{{ row.mode }}</td>
                         <td>{{ row.trips|round(2) }}</td>
                         <td>{{ row.qty|round(2) }}</td>
+                        <td>{{ row.trip_capacity|round(2) }}</td>
+                        <td>{{ row.min_batch|round(2) }}</td>
                         <td>₹{{ row.unit_trip_cost|round(2) }}</td>
                         <td>₹{{ row.route_cost|round(2) }}</td>
                       </tr>
                     {% else %}
-                      <tr><td colspan="8" class="text-secondary text-center">No dispatch plan available.</td></tr>
+                      <tr><td colspan="10" class="text-secondary text-center">No dispatch plan available.</td></tr>
                     {% endfor %}
                   </tbody>
                 </table>
@@ -711,7 +833,7 @@
               <div class="table-responsive">
                 <table class="table table-premium align-middle mb-0">
                   <thead class="table-dark">
-                    <tr><th>IU</th><th>Period</th><th>Produced</th><th>Capacity</th><th>Utilization</th><th>Cost/ton</th><th>Total cost</th></tr>
+                    <tr><th>IU</th><th>Period</th><th>Produced</th><th>Internal demand</th><th>Net exported</th><th>Capacity</th><th>Utilization</th><th>Cost/ton</th><th>Total cost</th></tr>
                   </thead>
                   <tbody>
                     {% for row in ui.get('production', []) %}
@@ -719,13 +841,15 @@
                         <td>{{ row.code }}</td>
                         <td>{{ row.period }}</td>
                         <td>{{ row.produced|round(2) }}</td>
+                        <td>{{ (row.internal_demand or 0)|round(2) }}</td>
+                        <td>{{ (row.net_exported or 0)|round(2) }}</td>
                         <td>{{ row.capacity|round(2) }}</td>
                         <td>{{ row.utilization_pct|round(2) }}%</td>
                         <td>₹{{ row.cost_per_ton|round(2) }}</td>
                         <td>₹{{ row.cost|round(2) }}</td>
                       </tr>
                     {% else %}
-                      <tr><td colspan="7" class="text-secondary text-center">No production plan available.</td></tr>
+                      <tr><td colspan="9" class="text-secondary text-center">No production plan available.</td></tr>
                     {% endfor %}
                   </tbody>
                 </table>
@@ -736,7 +860,7 @@
               <div class="table-responsive">
                 <table class="table table-premium align-middle mb-0">
                   <thead class="table-dark">
-                    <tr><th>Plant</th><th>Period</th><th>Opening</th><th>Inbound</th><th>Shipments out</th><th>Demand</th><th>Outbound total</th><th>Closing</th><th>Min</th><th>Max</th></tr>
+                    <tr><th>Plant</th><th>Period</th><th>Opening</th><th>Inbound</th><th>Shipments out</th><th>Demand</th><th>Outbound total</th><th>Closing</th><th>Min</th><th>Max</th><th>Safety</th><th>Capacity</th></tr>
                   </thead>
                   <tbody>
                     {% for row in ui.get('inventory', []) %}
@@ -751,9 +875,11 @@
                         <td>{{ row.closing|round(2) }}</td>
                         <td>{{ row.min_close|round(2) }}</td>
                         <td>{{ row.max_close if row.max_close is not none else '—' }}</td>
+                        <td>{{ '✓' if row.meets_safety_stock else '⚠' }}</td>
+                        <td>{{ '✓' if row.within_capacity else '⚠' }}</td>
                       </tr>
                     {% else %}
-                      <tr><td colspan="10" class="text-secondary text-center">No inventory ledger available.</td></tr>
+                      <tr><td colspan="12" class="text-secondary text-center">No inventory ledger available.</td></tr>
                     {% endfor %}
                   </tbody>
                 </table>
@@ -767,4 +893,169 @@
     </div>
   </section>
 </div>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const holder = document.getElementById('optimizationCharts');
+      if (!holder) return;
+      const payload = holder.dataset.chart ? JSON.parse(holder.dataset.chart) : null;
+      if (!payload) return;
+
+      const palette = ['#4c6fff', '#5dd39e', '#f4a261', '#ef476f', '#6c757d', '#0dcaf0'];
+      const numberOrZero = (val) => Number(val || 0);
+
+      const drawChart = (canvasId, config) => {
+        const el = document.getElementById(canvasId);
+        if (!el) return;
+        return new Chart(el, config);
+      };
+
+      const costEntries = Object.entries(payload.costs || {}).filter(([, v]) => numberOrZero(v) > 0);
+      if (!costEntries.length && payload.objective) {
+        costEntries.push(['Objective', payload.objective]);
+      }
+      drawChart('chartCostBreakdown', {
+        type: 'doughnut',
+        data: {
+          labels: costEntries.map(([k]) => k.replace(/_/g, ' ')),
+          datasets: [{
+            data: costEntries.map(([, v]) => numberOrZero(v)),
+            backgroundColor: palette,
+            borderWidth: 1,
+          }],
+        },
+        options: {
+          plugins: {
+            legend: { position: 'bottom' },
+            tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ₹${ctx.parsed.toLocaleString(undefined, { maximumFractionDigits: 2 })}` } },
+          },
+          cutout: '55%',
+        },
+      });
+
+      const prodAggregates = (payload.production || []).reduce((acc, row) => {
+        const key = row.code || row.plant || 'N/A';
+        if (!acc[key]) acc[key] = { produced: 0, capacity: 0 };
+        acc[key].produced += numberOrZero(row.produced);
+        acc[key].capacity = Math.max(acc[key].capacity, numberOrZero(row.capacity));
+        return acc;
+      }, {});
+      const prodLabels = Object.keys(prodAggregates);
+      drawChart('chartProdCapacity', {
+        type: 'bar',
+        data: {
+          labels: prodLabels,
+          datasets: [
+            { label: 'Produced', data: prodLabels.map((k) => prodAggregates[k].produced), backgroundColor: palette[0] },
+            { label: 'Capacity', data: prodLabels.map((k) => prodAggregates[k].capacity), backgroundColor: palette[2] },
+          ],
+        },
+        options: {
+          responsive: true,
+          scales: { y: { beginAtZero: true } },
+          plugins: { legend: { position: 'bottom' } },
+        },
+      });
+
+      const routes = (payload.dispatch || []).map((row) => ({
+        label: `${row.from || ''} → ${row.to || ''} (${row.mode || 'mode'})`,
+        qty: numberOrZero(row.qty),
+      }))
+        .sort((a, b) => b.qty - a.qty)
+        .slice(0, 7);
+      drawChart('chartRouteVolume', {
+        type: 'bar',
+        data: {
+          labels: routes.map((r) => r.label),
+          datasets: [{ label: 'Qty', data: routes.map((r) => r.qty), backgroundColor: palette[1] }],
+        },
+        options: {
+          indexAxis: 'y',
+          scales: { x: { beginAtZero: true } },
+          plugins: { legend: { display: false } },
+        },
+      });
+
+      const inventoryByPeriod = (payload.inventory || []).reduce((acc, row) => {
+        const period = row.period ?? row.time_period ?? 0;
+        if (!acc[period]) acc[period] = { closing: 0, demand: 0, outbound: 0 };
+        acc[period].closing += numberOrZero(row.closing);
+        acc[period].demand += numberOrZero(row.demand);
+        acc[period].outbound += numberOrZero(row.outbound_total);
+        return acc;
+      }, {});
+      const periods = Object.keys(inventoryByPeriod).sort((a, b) => Number(a) - Number(b));
+      drawChart('chartInventoryTrend', {
+        type: 'line',
+        data: {
+          labels: periods,
+          datasets: [{
+            label: 'Closing stock',
+            data: periods.map((p) => inventoryByPeriod[p].closing),
+            borderColor: palette[0],
+            backgroundColor: 'rgba(76, 111, 255, 0.15)',
+            tension: 0.25,
+            fill: true,
+          }],
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { position: 'bottom' } },
+          scales: { y: { beginAtZero: true } },
+        },
+      });
+
+      const serviceByPeriod = periods.map((p) => {
+        const row = inventoryByPeriod[p];
+        const demand = row.demand;
+        const served = Math.min(row.outbound, demand);
+        const pct = demand ? (served / demand) * 100 : 0;
+        return { period: p, pct };
+      });
+      const modeEntries = Object.entries(payload.transport_cost_by_mode || {}).filter(([, v]) => numberOrZero(v) > 0);
+      const combinedLen = Math.max(serviceByPeriod.length, modeEntries.length);
+      const serviceLabels = Array.from({ length: combinedLen }, (_, idx) => {
+        if (serviceByPeriod[idx]) return serviceByPeriod[idx].period;
+        if (modeEntries[idx]) return modeEntries[idx][0];
+        return idx + 1;
+      });
+      const serviceValues = serviceLabels.map((_, idx) => serviceByPeriod[idx] ? serviceByPeriod[idx].pct : numberOrZero(payload.service_level_pct));
+      const modeValues = serviceLabels.map((_, idx) => modeEntries[idx] ? numberOrZero(modeEntries[idx][1]) : 0);
+      drawChart('chartServicePeriod', {
+        type: 'line',
+        data: {
+          labels: serviceLabels,
+          datasets: [{
+            label: 'Service level %',
+            data: serviceValues,
+            borderColor: palette[3],
+            backgroundColor: 'rgba(239, 71, 111, 0.15)',
+            tension: 0.25,
+            fill: true,
+            yAxisID: 'y',
+          }, {
+            type: 'bar',
+            label: 'Mode cost share',
+            data: modeValues,
+            backgroundColor: palette[2],
+            hidden: !modeEntries.length,
+            yAxisID: 'y1',
+            parsing: false,
+          }],
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { position: 'bottom' } },
+          scales: {
+            y: { beginAtZero: true, max: 110, ticks: { callback: (v) => `${v}%` } },
+            y1: { position: 'right', beginAtZero: true, grid: { drawOnChartArea: false } },
+          },
+        },
+      });
+    });
+  </script>
 {% endblock %}
